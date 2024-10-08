@@ -3,9 +3,21 @@
 
 #include <round.h>
 #include <stdint.h>
-
+#include <list.h>
+#include "threads/synch.h"
 /* Number of timer interrupts per second. */
 #define TIMER_FREQ 100
+
+/* Macro to make getting sleeping_threads from lists cleaner */
+#define GET_SLEPT_THREAD(e) list_entry(e, struct sleeping_thread, list_element)
+
+/* A sleeping thread is a thread that has been put to sleep, such 
+a thread must only be ready again when awaken_time is reached. */
+struct sleeping_thread {
+    int64_t awaken_time;  /* Time (ticks) when the thread should wake up. */
+    struct list_elem list_element; /* Inserts this struct in sleeping_list. */
+    struct semaphore sem; /* Controls thread blocking when slept/awoken. */
+};
 
 void timer_init (void);
 void timer_calibrate (void);
