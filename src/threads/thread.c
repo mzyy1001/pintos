@@ -258,6 +258,7 @@ thread_unblock (struct thread *t)
   ASSERT (t->status == THREAD_BLOCKED);
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
+  yield_if_needed(t->priority);
   intr_set_level (old_level);
 }
 
@@ -333,6 +334,24 @@ thread_yield (void)
   intr_set_level (old_level);
 }
 
+/* Called by a function that has in some way added to the ready list, the new
+thread's priority is passed in. Current thread yields if it is no longer 
+the highest priority thread. */
+void
+yield_if_needed(int64_t other_priority) {
+
+  enum intr_level old_level = intr_disable();     // Disable interrupts to protect the ready list
+
+  /* Check if any thread in the ready_list has a higher priority than the current thread */
+  if ((other_priority>= thread_current()->priority) && !intr_context() && thread_current()!= idle_thread) {
+    intr_set_level(old_level);  // Re-enable interrupts before yielding
+    thread_yield();             // Yield to the higher-priority thread
+    return;
+  }
+
+  intr_set_level(old_level); 
+}
+
 /* Invoke function 'func' on all threads, passing along 'aux'.
    This function must be called with interrupts off. */
 void
@@ -350,11 +369,28 @@ thread_foreach (thread_action_func *func, void *aux)
     }
 }
 
-/* Sets the current thread's priority to NEW_PRIORITY. */
+/* Sets the current thread's priority to new_priority, yields the thread
+  if it is no longer the highest priority thread. */
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+  thread_current()->priority = new_priority;
+  enum intr_level old_level = intr_disable();
+
+  if (!list_empty(&ready_list) && !intr_context()) {
+    for (struct list_elem *e = list_begin(&ready_list); 
+          e != list_end(&ready_list); e = list_next(e)) {
+      struct thread *t = list_entry(e, struct thread, elem);
+
+      // Yield if a thread with a higher priority is found 
+      if (t->priority > new_priority) {
+        intr_set_level(old_level);
+        thread_yield();
+        return;
+      }
+    }
+
+  }
 }
 
 /* Returns the current thread's priority. */
@@ -509,10 +545,29 @@ alloc_frame (struct thread *t, size_t size)
 static struct thread *
 next_thread_to_run (void) 
 {
-  if (list_empty (&ready_list))
-    return idle_thread;
-  else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+  if (list_empty(&ready_list)) {
+    return idle_thread;  // Return idle thread if no thread is ready
+  } else {
+    enum intr_level old_level = intr_disable();     // Disable interrupts to protect the ready list
+
+    struct list_elem *highest_priority_elem = list_begin(&ready_list);
+    int64_t max_priority = list_entry(highest_priority_elem, struct thread, elem)->priority;
+
+    /* Iterate over the entire list to find the highest-priority thread */
+    for (struct list_elem *cur_elem = list_begin(&ready_list); cur_elem != list_end(&ready_list); cur_elem = list_next(cur_elem)) {
+      struct thread *cur_thread = list_entry(cur_elem, struct thread, elem);
+
+      if (cur_thread->priority > max_priority) {
+        highest_priority_elem = cur_elem;
+        max_priority = cur_thread->priority;
+      }
+    }
+
+    /* Remove the highest-priority thread from the ready list and return it */
+    list_remove(highest_priority_elem);
+    intr_set_level(old_level);
+    return list_entry(highest_priority_elem, struct thread, elem);
+  }
 }
 
 /* Completes a thread switch by activating the new thread's page
