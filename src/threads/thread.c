@@ -402,19 +402,29 @@ thread_get_priority (void)
   return thread_current ()->priority;
 }
 
+/*help function for nice update, which update the priority*/
+void
+thread_update_priority()
+{
+  Float recent_cpu = thread_get_recent_cpu();
+  int nice = thread_get_nice();
+  int priority = PRI_MAX - FLOAT_TO_INT_ROUND(FLOAT_SUB(FLOAT_DIV_INT(recent_cpu, 4), FLOAT_MUL(nice, 2)));
+  thread_set_priority(priority);
+}
+
 /* Sets the current thread's nice value to NICE. */
 void
-thread_set_nice (int nice UNUSED) 
+thread_set_nice (int nice) 
 {
-  /* Not yet implemented. */
+  thread_current()->nice = nice;
+  thread_update_priority();
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return thread_current ()->nice;
 }
 
 /* Returns 100 times the system load average. */
