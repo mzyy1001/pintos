@@ -51,6 +51,7 @@ struct kernel_thread_frame
 static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
+extern Float load_avg;          /* # of average of load in CPU, used for BSD*/
 
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
@@ -220,6 +221,7 @@ thread_create (const char *name, int priority,
   intr_set_level (old_level);
 
   /* Add to run queue. */
+  
   thread_unblock (t);
 
   return tid;
@@ -404,7 +406,7 @@ thread_get_priority (void)
 
 /*help function for nice update, which update the priority*/
 void
-thread_update_priority()
+thread_update_priority(void)
 {
   Float recent_cpu = thread_get_recent_cpu();
   int nice = thread_get_nice();
@@ -416,6 +418,9 @@ thread_update_priority()
 void
 thread_set_nice (int nice) 
 {
+  /*check nice is in Legal range*/
+  ASSERT(nice <= 20 && nice >= -20);
+
   thread_current()->nice = nice;
   thread_update_priority();
 }
@@ -431,17 +436,56 @@ thread_get_nice (void)
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return FLOAT_TO_INT_ROUND(FLOAT_MUL_INT(load_avg, 100));
 }
 
-/* Returns 100 times the current thread's recent_cpu value. */
+/* Returns 100 times the current thread's recent_cpu value. 
+recent_cpu = (2*load_avg)/(2*load_avg + 1) * recent_cpu + nice
+*/
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return FLOAT_TO_INT_ROUND(FLOAT_MUL_INT(thread_current()->recent_cpu, 100));;
 }
+
+
+/*help function for update recent CPU*/
+void 
+thread_update_recent (void)
+{
+  struct list_elem *e;
+  for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
+    struct thread *t = list_entry(e, struct thread, allelem);
+    if (t != idle_thread) {
+      int load = thread_get_load_avg();
+      Float recent_cpu = t->recent_cpu;
+      int nice = t->nice;
+      Float coef = FLOAT_DIV_INT(FLOAT_TO_INT(load),(2*load + 1));
+      Float new_recent_cpu = FLOAT_ADD_INT((FLOAT_MUL(coef,recent_cpu)), nice);
+      t->recent_cpu = new_recent_cpu;
+    }
+  }
+}
+
+/*get number of ready_threads, help function for update load_avg/*/
+int
+thread_get_ready(void) 
+{
+  return (int)list_size(&ready_list);
+}
+
+/*update load_avg*/
+void 
+thread_update_load(void) 
+{
+  int ready_threads = thread_get_ready();
+  if (thread_current() != idle_thread) {
+    ready_threads++;
+  }
+  /*load_avg = (59/60) * load_avg + (1/60) * ready_threads;*/
+  load_avg = FLOAT_ADD(FLOAT_MUL(FLOAT_DIV_INT(INT_TO_FLOAT(59), 60), load_avg), FLOAT_DIV_INT((ready_threads), 60));
+}
+
 
 /* Idle thread.  Executes when no other thread is ready to run.
 
@@ -530,6 +574,8 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  t->recent_cpu = INT_TO_FLOAT(0);
+  t->nice = 0;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

@@ -197,11 +197,18 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+  /*update the recent_cpu and load_average in times of timer_freq*/
+  if(ticks % TIMER_FREQ == 0) 
+  {
+    thread_update_load();    
+    thread_update_recent();
+  }
+
   struct sleeping_thread *st;
   
   enum intr_level old_level = intr_disable ();
   struct list_elem *cur_slept_elem = list_begin (&sleeping_list);
-  
+
   /* Since the sleeping list is sorted, it continues till a thread
   remains sleeping or we have awoken all available threads */
   while (!list_empty(&sleeping_list))
