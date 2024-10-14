@@ -369,6 +369,18 @@ thread_foreach (thread_action_func *func, void *aux)
     }
 }
 
+/* Comparison function for thread priorities */
+bool
+priority_more(
+  const struct list_elem *a, const struct list_elem *b, void *aux UNUSED
+  )
+{
+  int64_t priority_a = list_entry(a, struct thread, elem)->priority;
+  int64_t priority_b = list_entry(b, struct thread, elem)->priority;
+  return priority_a > priority_b;
+}
+
+// TODO(Implemnt locks)
 /* Sets the current thread's priority to new_priority, yields the thread
   if it is no longer the highest priority thread. */
 void
