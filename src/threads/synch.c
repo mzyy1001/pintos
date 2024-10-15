@@ -268,6 +268,21 @@ cond_init (struct condition *cond)
   list_init (&cond->waiters);
 }
 
+/* Comparison function for thread priorities */
+static bool
+priority_less_semelem(
+  const struct list_elem *a, const struct list_elem *b, void *aux UNUSED
+  )
+{
+  struct list_elem *a_max = list_begin(
+    &(list_entry(a, struct semaphore_elem, elem)->semaphore.waiters)
+    );
+  struct list_elem *b_max = list_begin(
+    &(list_entry(b, struct semaphore_elem, elem)->semaphore.waiters)
+    );
+  return (!priority_more(a_max, b_max , NULL));
+}
+
 /* Atomically releases LOCK and waits for COND to be signaled by
    some other piece of code.  After COND is signaled, LOCK is
    reacquired before returning.  LOCK must be held before calling
@@ -320,9 +335,12 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
   ASSERT (!intr_context ());
   ASSERT (lock_held_by_current_thread (lock));
 
-  if (!list_empty (&cond->waiters)) 
-    sema_up (&list_entry (list_pop_front (&cond->waiters),
-                          struct semaphore_elem, elem)->semaphore);
+  if (!list_empty (&cond->waiters)) {
+    struct list_elem *max_elem =  list_max(&cond->waiters, priority_less_semelem, NULL);
+    list_remove(max_elem);
+    sema_up (&list_entry (max_elem,struct semaphore_elem, elem)->semaphore);
+  }
+    
 }
 
 /* Wakes up all threads, if any, waiting on COND (protected by
