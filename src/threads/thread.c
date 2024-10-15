@@ -51,7 +51,7 @@ struct kernel_thread_frame
 static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
-extern Float load_avg;          /* # of average of load in CPU, used for BSD*/
+Float load_avg = INT_TO_FLOAT(0); /* # of average of load in CPU, used for BSD*/       
 
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */

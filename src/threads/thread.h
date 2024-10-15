@@ -6,6 +6,8 @@
 #include <stdint.h>
 #include <float.h>
 
+extern Float load_avg;   
+
 /* States in a thread's life cycle. */
 enum thread_status
   {
