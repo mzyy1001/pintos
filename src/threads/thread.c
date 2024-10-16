@@ -672,3 +672,54 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+/* Facilitates priority donation by allowing a thread (donor) waiting on a lock to donate 
+its priority to the thread (receiver) currently holding that lock. This helps prevent 
+priority inversion. Can chain recursively.
+PRE: MUST BE CALLED ON THE THREAD THAT THE DONOR IS WAITING ON, DONOR MUST HAVE ITS 
+WAITING_ON VALUE SET TO THE INITIAL CALL. THE donated_priority SHOULD REMAIN CONSTANT BUT THE FUNCTION
+RECURSIVELY TRAWLS THROUGH WAITING_ON TO CHAIN DONATIONS. NOTE DONATED_PRIORITY SHOULD JUST HAVE
+TID & PRIORITY DEFINED AND SHOULD ALOW THE INSERTION INTO THE LIST TO DETERMINE IT'S 
+
+Parameters:
+ * donor    - Pointer to the thread donating its priority.
+ * receiver - Pointer to the thread receiving the donated priority.*/
+void donate_priority(struct donated_priority priority_to_donate, struct thread *receiver) {
+    /* Implementation Outline:
+     * 1. Create a new donated_priority entry with donor's priority and ID.
+     * 2. Insert the donated_priority into the receiver's donated_priorities list in order.
+     * 3. If the receiver is waiting on another thread (non NULL waiting_on), recursively call down the chain.
+     */
+}
+
+/* Removes a particular threads priority donation from all receiver's donated_priorities lists 
+based on the donor's thread ID. This ensures that once a donation is no longer needed, 
+it is correctly removed to maintain accurate priority calculations. 
+
+ PRE: YOU MUST CALL THIS AFTER FOLLOWING FROM THE DONOR THREADS WAITING_ON TO FIND THE FIRST RECIEVER,
+ YOU MUST SET ORIGINAL THREAD'S POINTER TO NULL BEFORE CALLING THIS. 
+
+Parameters:
+ * donor_id - Thread ID of the donor whose priority is to be revoked.
+ * receiver - Pointer to the thread from which the priority donation is revoked. */
+void revoke_priority(tid_t donor_id, struct thread *receiver) {
+  /* Implementation Outline:
+    * 1. Traverse the receiver's donated_priorities list to find the entry matching donor_id.
+    * 2. Remove the matching donated_priority from the list and free its memory.
+    * 3. No need to recalculate effective priority explicitly as it's derived from the list.
+    * 4. If the receiver is waiting on another thread, recursively call on that one.*/
+}
+
+/* When a lock is released, this function iterates through all threads waiting on the lock and 
+revokes their priority donations from the lock holder. This ensures that no stale donations remain 
+and the lock holder's priority accurately reflects its base priority and any other active donations.
+
+Parameters: lock - Pointer to lock being released. Returns: void */
+void remove_all_donations_for_lock(struct lock *lock) {
+  /* Implementation Outline:
+  1. Access the semaphore's waiters list associated with the lock.
+  2. Iterate through each waiting thread in the waiters list.
+  3. For each waiting thread, call revoke_priority() with the waiting thread's tid and the lock holder.
+  4. After revoking all donations, clear the lock holder's donated_priorities list related to this lock. */
+}
+
