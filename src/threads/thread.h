@@ -28,6 +28,7 @@ typedef int tid_t;
 struct donated_priority{
    int priority;
    tid_t donor_id;
+   struct list_elem list_element;
 };
 
 /* A kernel thread or user process.
@@ -99,7 +100,8 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
-    int *donated_priority; /*sorted descending list of donated priorities*/
+    struct list donated_priorities;     /* List of donated priorities */
+    struct thread *waiting_on;          /* Thread this thread is waiting on */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */

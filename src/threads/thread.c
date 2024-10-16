@@ -528,6 +528,10 @@ init_thread (struct thread *t, const char *name, int priority)
   t->status = THREAD_BLOCKED;
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
+  /* Initialize the donated priorities list */
+  list_init(&t->donated_priorities);
+
+  t->waiting_on = NULL;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
 
