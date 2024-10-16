@@ -24,6 +24,12 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+/* A donated priority contains the priority donated and the TID of the donor */
+struct donated_priority{
+   int priority;
+   tid_t donor_id;
+};
+
 /* A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -92,6 +98,8 @@ struct thread
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
+
+    int *donated_priority; /*sorted descending list of donated priorities*/
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
