@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <float.h>
+#include <math.h>
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -410,7 +411,11 @@ thread_update_priority(void)
 {
   Float recent_cpu = thread_get_recent_cpu();
   int nice = thread_get_nice();
-  int priority = PRI_MAX - FLOAT_TO_INT_ROUND(FLOAT_SUB(FLOAT_DIV_INT(recent_cpu, 4), FLOAT_MUL(nice, 2)));
+  int priority = PRI_MAX - FLOAT_TO_INT_ROUND(FLOAT_ADD_INT(FLOAT_DIV_INT(recent_cpu, 4), nice*2));
+  priority = min(priority,63); // check up_bound
+  priority = max(priority,0); // check low_bound
+  printf("%d %d nice\n",nice, priority);
+  printf("readylist: %d\n",thread_get_ready());
   thread_set_priority(priority);
 }
 
@@ -483,7 +488,8 @@ thread_update_load(void)
     ready_threads++;
   }
   /*load_avg = (59/60) * load_avg + (1/60) * ready_threads;*/
-  load_avg = FLOAT_ADD(FLOAT_MUL(FLOAT_DIV_INT(INT_TO_FLOAT(59), 60), load_avg), FLOAT_DIV_INT((ready_threads), 60));
+  load_avg = FLOAT_ADD(FLOAT_MUL(FLOAT_DIV_INT(INT_TO_FLOAT(59), 60), load_avg), FLOAT_DIV_INT(INT_TO_FLOAT(ready_threads), 60));
+  printf("ready_threads %d, load_avg : %d\n",ready_threads,FLOAT_TO_INT_ROUND(FLOAT_MUL_INT(load_avg, 100)));
 }
 
 

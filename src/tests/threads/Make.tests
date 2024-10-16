@@ -8,10 +8,13 @@ priority-donate-nest priority-donate-sema priority-donate-lower         \
 priority-fifo priority-preempt priority-sema priority-condvar		    \
 priority-donate-chain priority-preservation                             \
 mlfqs-load-1 mlfqs-load-60 mlfqs-load-avg mlfqs-recent-1 mlfqs-fair-2	\
-mlfqs-fair-20 mlfqs-nice-2 mlfqs-nice-10 mlfqs-block)
+mlfqs-fair-20 mlfqs-nice-2 mlfqs-nice-10 mlfqs-block bsd-test)
+
 
 # Sources for tests.
+
 tests/threads_SRC  = tests/threads/tests.c
+tests/threads_SRC += tests/threads/bsd-test.c
 tests/threads_SRC += tests/threads/alarm-priority.c
 tests/threads_SRC += tests/threads/priority-change.c
 tests/threads_SRC += tests/threads/priority-donate-one.c
