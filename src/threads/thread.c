@@ -4,6 +4,8 @@
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
+#include <float.h>
+#include <math.h>
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -11,6 +13,8 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+
+
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -49,6 +53,7 @@ struct kernel_thread_frame
 static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
+Float load_avg = INT_TO_FLOAT(0); /* # of average of load in CPU, used for BSD*/       
 
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
@@ -68,8 +73,15 @@ static void init_thread (struct thread *, const char *name, int priority);
 static bool is_thread (struct thread *) UNUSED;
 static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
-void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+void thread_schedule_tail (struct thread *prev);
+void thread_update_priority(void);
+void print_thread(struct thread *t);
+void print_current_thread(void);
+void update_priority(struct thread *t);
+int thread_get_ready(void);
+Float calcualte_recent(Float recent_cpu,int nice);
+int calculate_priority(Float recent_cpu,int nice);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -218,6 +230,7 @@ thread_create (const char *name, int priority,
   intr_set_level (old_level);
 
   /* Add to run queue. */
+  
   thread_unblock (t);
 
   return tid;
@@ -234,9 +247,36 @@ thread_block (void)
 {
   ASSERT (!intr_context ());
   ASSERT (intr_get_level () == INTR_OFF);
-
+  thread_update_priority();
   thread_current ()->status = THREAD_BLOCKED;
   schedule ();
+}
+
+
+/*just for debug*/
+void
+print_thread(struct thread *t)
+{
+  printf("%s status: %d priority: %d nice:%d recentcpu:%d\n",
+  t->name,t->status,t->priority,t->nice,FLOAT_TO_INT(FLOAT_MUL_INT(t->recent_cpu,100)));
+}
+/*just for debug*/
+void
+print_current_thread(void)
+{
+  print_thread(thread_current());
+}
+/*just for debug*/
+void
+print_all_lists(void)
+{
+  struct list_elem *e;
+  for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
+    struct thread *t = list_entry(e, struct thread, allelem);
+    if (t != idle_thread) {
+      print_thread(t);
+    }
+  }
 }
 
 /* Transitions a blocked thread T to the ready-to-run state.
@@ -251,13 +291,12 @@ void
 thread_unblock (struct thread *t) 
 {
   enum intr_level old_level;
-
   ASSERT (is_thread (t));
-
-  old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
+  old_level = intr_disable ();
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
+  update_priority(t);
   yield_if_needed(t->priority);
   intr_set_level (old_level);
 }
@@ -332,6 +371,13 @@ thread_yield (void)
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
+}
+
+/*check whether a thread is a idle thread*/
+bool
+thread_is_idle(struct thread *t)
+{
+  return t == idle_thread;
 }
 
 /* Called by a function that has in some way added to the ready list, the new
@@ -412,36 +458,133 @@ thread_get_priority (void)
   return thread_current ()->priority;
 }
 
+int
+calculate_priority(Float recent_cpu,int nice) 
+{
+  Float recent_cpu_div_4 = FLOAT_DIV_INT(recent_cpu, 4);
+  Float nice_times_2 = INT_TO_FLOAT(nice * 2);
+  Float priority = FLOAT_SUB(INT_TO_FLOAT(PRI_MAX), recent_cpu_div_4);
+  int i_priority = FLOAT_TO_INT(FLOAT_SUB(priority, nice_times_2));
+  i_priority = min(i_priority,63); // check up_bound
+  i_priority = max(i_priority,0); // check low_bound
+  // printf("*&*& %d %d %d &*&*\n",
+  // FLOAT_TO_INT(FLOAT_MUL_INT(recent_cpu_div_4,100)),
+  // FLOAT_TO_INT(FLOAT_MUL_INT(nice_times_2,100)),
+  // FLOAT_TO_INT(FLOAT_MUL_INT(priority,100)));
+  return i_priority;
+}
+
+/*help function for nice update, which update the priority*/
+void
+thread_update_priority(void)
+{
+  Float recent_cpu = thread_get_recent_cpu();
+  int nice = thread_get_nice();
+  int priority = calculate_priority(recent_cpu,nice);
+  // printf("%d %d nice\n",nice, priority);
+  // printf("readylist: %d\n",thread_get_ready());
+  thread_set_priority(priority);
+}
+
+/*update priority of a specific thread*/
+void
+update_priority(struct thread *t)
+{
+  Float recent_cpu = t->recent_cpu;
+  int nice = t->nice;
+  int priority = calculate_priority(recent_cpu,nice);
+  t->priority = priority;
+}
+
 /* Sets the current thread's nice value to NICE. */
 void
-thread_set_nice (int nice UNUSED) 
+thread_set_nice (int nice) 
 {
-  /* Not yet implemented. */
+  /*check nice is in Legal range*/
+  ASSERT(nice <= 20 && nice >= -20);
+
+  thread_current()->nice = nice;
+  thread_update_priority();
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return thread_current ()->nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return FLOAT_TO_INT_ROUND(FLOAT_MUL_INT(load_avg, 100));
 }
 
-/* Returns 100 times the current thread's recent_cpu value. */
+/* Returns 100 times the current thread's recent_cpu value. 
+recent_cpu = (2*load_avg)/(2*load_avg + 1) * recent_cpu + nice
+*/
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return FLOAT_TO_INT_ROUND(FLOAT_MUL_INT(thread_current()->recent_cpu, 100));;
 }
+
+Float 
+calcualte_recent(Float recent_cpu,int nice)
+{
+  Float two_load_avg = FLOAT_MUL(load_avg, INT_TO_FLOAT(2));
+  Float denominator = FLOAT_ADD(two_load_avg, INT_TO_FLOAT(1));
+  Float fraction = FLOAT_DIV(two_load_avg, denominator);
+  Float scaled_recent_cpu = FLOAT_MUL(fraction, recent_cpu);
+  Float final_result = FLOAT_ADD(scaled_recent_cpu, INT_TO_FLOAT(nice));
+  return final_result;
+}
+
+/*help function for update recent CPU*/
+void 
+thread_update_recent (void)
+{
+  struct list_elem *e;
+  for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
+    struct thread *t = list_entry(e, struct thread, allelem);
+    if (t != idle_thread) {
+      Float recent_cpu = t->recent_cpu;
+      int nice = t->nice;
+      t->recent_cpu = calcualte_recent(recent_cpu,nice);
+      update_priority(t);
+    }
+  }
+}
+
+void
+thread_recent_add(void) 
+{
+  if(!thread_is_idle(thread_current())) 
+  {
+    thread_current()->recent_cpu = FLOAT_ADD(thread_current()->recent_cpu,INT_TO_FLOAT(1));
+  }
+}
+
+/*get number of ready_threads, help function for update load_avg/*/
+int
+thread_get_ready(void) 
+{
+  return (int)list_size(&ready_list);
+}
+
+/*update load_avg*/
+void 
+thread_update_load(void) 
+{
+  int ready_threads = thread_get_ready();
+  if (thread_current() != idle_thread) {
+    ready_threads++;
+  }
+  /*load_avg = (59/60) * load_avg + (1/60) * ready_threads;*/
+  load_avg = FLOAT_DIV_INT(FLOAT_ADD_INT(FLOAT_MUL_INT(load_avg,59),ready_threads),60);
+}
+
 
 /* Idle thread.  Executes when no other thread is ready to run.
 
@@ -497,7 +640,6 @@ struct thread *
 running_thread (void) 
 {
   uint32_t *esp;
-
   /* Copy the CPU's stack pointer into `esp', and then round that
      down to the start of a page.  Because `struct thread' is
      always at the beginning of a page and the stack pointer is
@@ -530,6 +672,8 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  t->recent_cpu = INT_TO_FLOAT(0);
+  t->nice = 0;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

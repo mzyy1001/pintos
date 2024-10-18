@@ -42,13 +42,14 @@ test_mlfqs_block (void)
 
   msg ("Main thread releasing lock.");
   lock_release (&lock);
-
+  thread_yield();
   msg ("Block thread should have already acquired lock.");
 }
 
 static void
 block_thread (void *lock_) 
 {
+  print_all_lists();
   struct lock *lock = lock_;
   int64_t start_time;
 
