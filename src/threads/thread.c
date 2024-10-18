@@ -386,8 +386,16 @@ priority_more(
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current()->priority = new_priority;
+  struct thread *cur = thread_current();
+  cur->priority = new_priority;
   enum intr_level old_level = intr_disable();
+
+  /* Ensures this thread is correctly placed in the waiters list of the
+     lock it's waiting for */
+  if (cur->waiting_lock != NULL) {
+    list_remove(&cur->elem);
+    list_insert_ordered(&cur->waiting_lock->semaphore.waiters, &cur->elem, &priority_more, NULL);
+  }
 
   if (!list_empty(&ready_list) && !intr_context()) {
     for (struct list_elem *e = list_begin(&ready_list); 
@@ -401,7 +409,6 @@ thread_set_priority (int new_priority)
         return;
       }
     }
-
   }
 }
 
@@ -409,7 +416,24 @@ thread_set_priority (int new_priority)
 int
 thread_get_priority (void) 
 {
-  return thread_current ()->priority;
+  struct thread *cur = thread_current();
+  int p = cur->priority;
+
+  /* iterates through the locks this thread has to find which has the greatest
+    priority*/
+  struct list_elem *e;
+  for (e = list_begin (&cur->locks); e != list_end (&cur->locks);
+       e = list_next (e))
+  {
+    struct lock *l = list_entry (e, struct lock, locks_elem);
+    struct thread *t;
+    if (!list_empty(&l->semaphore.waiters)) {
+      t = list_entry(list_begin(&l->semaphore.waiters), struct thread, elem);
+      p = (p > t->priority) ? p : t->priority;
+    }
+  }
+
+  return p;
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -528,10 +552,10 @@ init_thread (struct thread *t, const char *name, int priority)
   t->status = THREAD_BLOCKED;
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
-  /* Initialize the donated priorities list */
-  list_init(&t->donated_priorities);
+  /* Initialize the locks list */
+  list_init(&t->locks);
 
-  t->waiting_on = NULL;
+  t->waiting_lock = NULL;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
 

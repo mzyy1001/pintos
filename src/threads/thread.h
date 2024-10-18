@@ -100,8 +100,9 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
-    struct list donated_priorities;     /* Descenting list of donated priorities */
-    struct thread *waiting_on;          /* Thread this thread is waiting on */
+
+    struct lock *waiting_lock;          /* Lock this thread is waiting on */
+    struct list locks;                  /* List of locks that thread has acquired */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -151,8 +152,8 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
-void donate_priority(struct donated_priority, struct thread *)
-void revoke_priority(tid_t, struct thread *)
-void remove_all_donations_for_lock(struct lock *)
+void donate_priority(struct donated_priority, struct thread *);
+void revoke_priority(tid_t, struct thread *);
+void remove_all_donations_for_lock(struct lock *);
 
 #endif /* threads/thread.h */
