@@ -14,6 +14,7 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 
+
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -72,8 +73,15 @@ static void init_thread (struct thread *, const char *name, int priority);
 static bool is_thread (struct thread *) UNUSED;
 static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
-void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+void thread_schedule_tail (struct thread *prev);
+void thread_update_priority(void);
+void print_thread(struct thread *t);
+void print_current_thread(void);
+void update_priority(struct thread *t);
+int thread_get_ready(void);
+Float calcualte_recent(Float recent_cpu,int nice);
+int calculate_priority(Float recent_cpu,int nice);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -239,9 +247,36 @@ thread_block (void)
 {
   ASSERT (!intr_context ());
   ASSERT (intr_get_level () == INTR_OFF);
-
+  thread_update_priority();
   thread_current ()->status = THREAD_BLOCKED;
   schedule ();
+}
+
+
+/*just for debug*/
+void
+print_thread(struct thread *t)
+{
+  printf("%s status: %d priority: %d nice:%d recentcpu:%d\n",
+  t->name,t->status,t->priority,t->nice,FLOAT_TO_INT(FLOAT_MUL_INT(t->recent_cpu,100)));
+}
+/*just for debug*/
+void
+print_current_thread(void)
+{
+  print_thread(thread_current());
+}
+/*just for debug*/
+void
+print_all_lists(void)
+{
+  struct list_elem *e;
+  for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
+    struct thread *t = list_entry(e, struct thread, allelem);
+    if (t != idle_thread) {
+      print_thread(t);
+    }
+  }
 }
 
 /* Transitions a blocked thread T to the ready-to-run state.
@@ -256,13 +291,12 @@ void
 thread_unblock (struct thread *t) 
 {
   enum intr_level old_level;
-
   ASSERT (is_thread (t));
-
-  old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
+  old_level = intr_disable ();
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
+  update_priority(t);
   yield_if_needed(t->priority);
   intr_set_level (old_level);
 }
@@ -339,6 +373,13 @@ thread_yield (void)
   intr_set_level (old_level);
 }
 
+/*check whether a thread is a idle thread*/
+bool
+thread_is_idle(struct thread *t)
+{
+  return t == idle_thread;
+}
+
 /* Called by a function that has in some way added to the ready list, the new
 thread's priority is passed in. Current thread yields if it is no longer 
 the highest priority thread. */
@@ -405,18 +446,42 @@ thread_get_priority (void)
   return thread_current ()->priority;
 }
 
+int
+calculate_priority(Float recent_cpu,int nice) 
+{
+  Float recent_cpu_div_4 = FLOAT_DIV_INT(recent_cpu, 4);
+  Float nice_times_2 = INT_TO_FLOAT(nice * 2);
+  Float priority = FLOAT_SUB(INT_TO_FLOAT(PRI_MAX), recent_cpu_div_4);
+  int i_priority = FLOAT_TO_INT(FLOAT_SUB(priority, nice_times_2));
+  i_priority = min(i_priority,63); // check up_bound
+  i_priority = max(i_priority,0); // check low_bound
+  // printf("*&*& %d %d %d &*&*\n",
+  // FLOAT_TO_INT(FLOAT_MUL_INT(recent_cpu_div_4,100)),
+  // FLOAT_TO_INT(FLOAT_MUL_INT(nice_times_2,100)),
+  // FLOAT_TO_INT(FLOAT_MUL_INT(priority,100)));
+  return i_priority;
+}
+
 /*help function for nice update, which update the priority*/
 void
 thread_update_priority(void)
 {
   Float recent_cpu = thread_get_recent_cpu();
   int nice = thread_get_nice();
-  int priority = PRI_MAX - FLOAT_TO_INT_ROUND(FLOAT_ADD_INT(FLOAT_DIV_INT(recent_cpu, 4), nice*2));
-  priority = min(priority,63); // check up_bound
-  priority = max(priority,0); // check low_bound
-  printf("%d %d nice\n",nice, priority);
-  printf("readylist: %d\n",thread_get_ready());
+  int priority = calculate_priority(recent_cpu,nice);
+  // printf("%d %d nice\n",nice, priority);
+  // printf("readylist: %d\n",thread_get_ready());
   thread_set_priority(priority);
+}
+
+/*update priority of a specific thread*/
+void
+update_priority(struct thread *t)
+{
+  Float recent_cpu = t->recent_cpu;
+  int nice = t->nice;
+  int priority = calculate_priority(recent_cpu,nice);
+  t->priority = priority;
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -453,6 +518,16 @@ thread_get_recent_cpu (void)
   return FLOAT_TO_INT_ROUND(FLOAT_MUL_INT(thread_current()->recent_cpu, 100));;
 }
 
+Float 
+calcualte_recent(Float recent_cpu,int nice)
+{
+  Float two_load_avg = FLOAT_MUL(load_avg, INT_TO_FLOAT(2));
+  Float denominator = FLOAT_ADD(two_load_avg, INT_TO_FLOAT(1));
+  Float fraction = FLOAT_DIV(two_load_avg, denominator);
+  Float scaled_recent_cpu = FLOAT_MUL(fraction, recent_cpu);
+  Float final_result = FLOAT_ADD(scaled_recent_cpu, INT_TO_FLOAT(nice));
+  return final_result;
+}
 
 /*help function for update recent CPU*/
 void 
@@ -462,13 +537,20 @@ thread_update_recent (void)
   for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
     struct thread *t = list_entry(e, struct thread, allelem);
     if (t != idle_thread) {
-      int load = thread_get_load_avg();
       Float recent_cpu = t->recent_cpu;
       int nice = t->nice;
-      Float coef = FLOAT_DIV_INT(FLOAT_TO_INT(load),(2*load + 1));
-      Float new_recent_cpu = FLOAT_ADD_INT((FLOAT_MUL(coef,recent_cpu)), nice);
-      t->recent_cpu = new_recent_cpu;
+      t->recent_cpu = calcualte_recent(recent_cpu,nice);
+      update_priority(t);
     }
+  }
+}
+
+void
+thread_recent_add(void) 
+{
+  if(!thread_is_idle(thread_current())) 
+  {
+    thread_current()->recent_cpu = FLOAT_ADD(thread_current()->recent_cpu,INT_TO_FLOAT(1));
   }
 }
 
@@ -488,8 +570,7 @@ thread_update_load(void)
     ready_threads++;
   }
   /*load_avg = (59/60) * load_avg + (1/60) * ready_threads;*/
-  load_avg = FLOAT_ADD(FLOAT_MUL(FLOAT_DIV_INT(INT_TO_FLOAT(59), 60), load_avg), FLOAT_DIV_INT(INT_TO_FLOAT(ready_threads), 60));
-  printf("ready_threads %d, load_avg : %d\n",ready_threads,FLOAT_TO_INT_ROUND(FLOAT_MUL_INT(load_avg, 100)));
+  load_avg = FLOAT_DIV_INT(FLOAT_ADD_INT(FLOAT_MUL_INT(load_avg,59),ready_threads),60);
 }
 
 
@@ -547,7 +628,6 @@ struct thread *
 running_thread (void) 
 {
   uint32_t *esp;
-
   /* Copy the CPU's stack pointer into `esp', and then round that
      down to the start of a page.  Because `struct thread' is
      always at the beginning of a page and the stack pointer is
