@@ -24,6 +24,11 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+struct donor {
+   struct thread *t;
+   struct list_elem donor_elem;
+};
+
 /* A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -137,7 +142,9 @@ typedef void thread_action_func (struct thread *t, void *aux);
 void thread_foreach (thread_action_func *, void *);
 
 bool priority_more (const struct list_elem *, const struct list_elem *, void *);
+bool priority_more_donor (const struct list_elem *, const struct list_elem *, void *);
 int thread_get_priority (void);
+int get_thread_priority (struct thread *);
 void thread_set_priority (int);
 
 int thread_get_nice (void);
