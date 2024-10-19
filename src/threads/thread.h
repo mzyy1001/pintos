@@ -24,13 +24,6 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
-/* A donated priority contains the priority donated and the TID of the donor */
-struct donated_priority{
-   int priority;
-   tid_t donor_id;
-   struct list_elem list_element;
-};
-
 /* A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -151,9 +144,5 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
-
-void donate_priority(struct donated_priority, struct thread *);
-void revoke_priority(tid_t, struct thread *);
-void remove_all_donations_for_lock(struct lock *);
 
 #endif /* threads/thread.h */

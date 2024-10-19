@@ -258,7 +258,7 @@ thread_unblock (struct thread *t)
   ASSERT (t->status == THREAD_BLOCKED);
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
-  yield_if_needed(t->priority);
+  yield_if_needed(get_thread_priority(t));
   intr_set_level (old_level);
 }
 
@@ -343,7 +343,7 @@ yield_if_needed(int64_t other_priority) {
   enum intr_level old_level = intr_disable();     // Disable interrupts to protect the ready list
 
   /* Check if any thread in the ready_list has a higher priority than the current thread */
-  if ((other_priority>= thread_current()->priority) && !intr_context() && thread_current()!= idle_thread) {
+  if ((other_priority>= thread_get_priority()) && !intr_context() && thread_current()!= idle_thread) {
     intr_set_level(old_level);  // Re-enable interrupts before yielding
     thread_yield();             // Yield to the higher-priority thread
     return;
@@ -375,8 +375,8 @@ priority_more(
   const struct list_elem *a, const struct list_elem *b, void *aux UNUSED
   )
 {
-  int64_t priority_a = list_entry(a, struct thread, elem)->priority;
-  int64_t priority_b = list_entry(b, struct thread, elem)->priority;
+  int64_t priority_a = get_thread_priority(list_entry(a, struct thread, elem));
+  int64_t priority_b = get_thread_priority(list_entry(b, struct thread, elem));
   return priority_a > priority_b;
 }
 
@@ -403,7 +403,7 @@ thread_set_priority (int new_priority)
       struct thread *t = list_entry(e, struct thread, elem);
 
       // Yield if a thread with a higher priority is found 
-      if (t->priority > new_priority) {
+      if (get_thread_priority(t) > new_priority) {
         intr_set_level(old_level);
         thread_yield();
         return;
@@ -416,22 +416,36 @@ thread_set_priority (int new_priority)
 int
 thread_get_priority (void) 
 {
-  struct thread *cur = thread_current();
-  int p = cur->priority;
+  return get_thread_priority(thread_current());
+}
 
-  /* iterates through the locks this thread has to find which has the greatest
-    priority*/
+/* Gets a thread's priority taking into account any donations.
+   It iterates through the locks owned by the thread and then 
+   recursively finds the priority of any of its donors, by 
+   iterating through the donors of the locks (hence the nested
+   for loop). It then recursively calls function on the thread
+   donors and then takes the max of all the threads that have 
+   donated to it.
+ */
+int 
+get_thread_priority(struct thread *t) {
+  int p = t->priority;
+
   struct list_elem *e;
-  for (e = list_begin (&cur->locks); e != list_end (&cur->locks);
+  for (e = list_begin (&t->locks); e != list_end (&t->locks);
        e = list_next (e))
-  {
-    struct lock *l = list_entry (e, struct lock, locks_elem);
-    struct thread *t;
-    if (!list_empty(&l->semaphore.waiters)) {
-      t = list_entry(list_begin(&l->semaphore.waiters), struct thread, elem);
-      p = (p > t->priority) ? p : t->priority;
+    {
+      struct lock *l = list_entry (e, struct lock, locks_elem);
+      struct list_elem *f;
+
+      for (f = list_begin (&l->donors); f != list_end (&l->donors);
+           f = list_next(f)) 
+        {
+          struct donor *d = list_entry(f, struct donor, donor_elem);
+          int max_p = get_thread_priority(d->t);
+          p = (p > max_p) ? p : max_p;
+        }
     }
-  }
 
   return p;
 }
@@ -591,15 +605,16 @@ next_thread_to_run (void)
     enum intr_level old_level = intr_disable();     // Disable interrupts to protect the ready list
 
     struct list_elem *highest_priority_elem = list_begin(&ready_list);
-    int64_t max_priority = list_entry(highest_priority_elem, struct thread, elem)->priority;
+    int64_t max_priority = get_thread_priority(list_entry(highest_priority_elem, struct thread, elem));
 
     /* Iterate over the entire list to find the highest-priority thread */
     for (struct list_elem *cur_elem = list_begin(&ready_list); cur_elem != list_end(&ready_list); cur_elem = list_next(cur_elem)) {
       struct thread *cur_thread = list_entry(cur_elem, struct thread, elem);
+      int64_t cur_priority = get_thread_priority(cur_thread);
 
-      if (cur_thread->priority > max_priority) {
+      if (cur_priority > max_priority) {
         highest_priority_elem = cur_elem;
-        max_priority = cur_thread->priority;
+        max_priority = cur_priority;
       }
     }
 
@@ -696,54 +711,3 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
-
-/* Facilitates priority donation by allowing a thread (donor) waiting on a lock to donate 
-its priority to the thread (receiver) currently holding that lock. This helps prevent 
-priority inversion. Can chain recursively.
-PRE: MUST BE CALLED ON THE THREAD THAT THE DONOR IS WAITING ON, DONOR MUST HAVE ITS 
-WAITING_ON VALUE SET TO THE INITIAL CALL. THE donated_priority SHOULD REMAIN CONSTANT BUT THE FUNCTION
-RECURSIVELY TRAWLS THROUGH WAITING_ON TO CHAIN DONATIONS. NOTE DONATED_PRIORITY SHOULD JUST HAVE
-TID & PRIORITY DEFINED AND SHOULD ALOW THE INSERTION INTO THE LIST TO DETERMINE IT'S 
-
-Parameters:
- * donor    - Pointer to the thread donating its priority.
- * receiver - Pointer to the thread receiving the donated priority.*/
-void donate_priority(struct donated_priority priority_to_donate, struct thread *receiver) {
-    /* Implementation Outline:
-     * 1. Create a new donated_priority entry with donor's priority and ID.
-     * 2. Insert the donated_priority into the receiver's donated_priorities list in order.
-     * 3. If the receiver is waiting on another thread (non NULL waiting_on), recursively call down the chain.
-     */
-}
-
-/* Removes a particular threads priority donation from all receiver's donated_priorities lists 
-based on the donor's thread ID. This ensures that once a donation is no longer needed, 
-it is correctly removed to maintain accurate priority calculations. 
-
- PRE: YOU MUST CALL THIS AFTER FOLLOWING FROM THE DONOR THREADS WAITING_ON TO FIND THE FIRST RECIEVER,
- YOU MUST SET ORIGINAL THREAD'S POINTER TO NULL BEFORE CALLING THIS. 
-
-Parameters:
- * donor_id - Thread ID of the donor whose priority is to be revoked.
- * receiver - Pointer to the thread from which the priority donation is revoked. */
-void revoke_priority(tid_t donor_id, struct thread *receiver) {
-  /* Implementation Outline:
-    * 1. Traverse the receiver's donated_priorities list to find the entry matching donor_id.
-    * 2. Remove the matching donated_priority from the list and free its memory.
-    * 3. No need to recalculate effective priority explicitly as it's derived from the list.
-    * 4. If the receiver is waiting on another thread, recursively call on that one.*/
-}
-
-/* When a lock is released, this function iterates through all threads waiting on the lock and 
-revokes their priority donations from the lock holder. This ensures that no stale donations remain 
-and the lock holder's priority accurately reflects its base priority and any other active donations.
-
-Parameters: lock - Pointer to lock being released. Returns: void */
-void remove_all_donations_for_lock(struct lock *lock) {
-  /* Implementation Outline:
-  1. Access the semaphore's waiters list associated with the lock.
-  2. Iterate through each waiting thread in the waiters list.
-  3. For each waiting thread, call revoke_priority() with the waiting thread's tid and the lock holder.
-  4. After revoking all donations, clear the lock holder's donated_priorities list related to this lock. */
-}
-

@@ -182,6 +182,7 @@ lock_init (struct lock *lock)
   ASSERT (lock != NULL);
 
   lock->holder = NULL;
+  list_init(&lock->donors);
   sema_init (&lock->semaphore, 1);
 }
 
@@ -199,13 +200,19 @@ lock_acquire (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
+
   struct thread *cur = thread_current();
   cur->waiting_lock = lock;
+
+  struct donor donor;
+  donor.t = cur;
+  list_push_front(&lock->donors, &donor.donor_elem);
 
   sema_down (&lock->semaphore);
 
   cur->waiting_lock = NULL;
   lock->holder = cur;
+  list_remove(&donor.donor_elem);
   list_push_front(&cur->locks, &lock->locks_elem);
 }
 
@@ -231,10 +238,10 @@ lock_try_acquire (struct lock *lock)
 
 /* Releases LOCK, which must be owned by the current thread.
 
-   An interrupt handler cannot acquire a lock, so it does not
-   make sense to try to release a lock within an interrupt
-   handler. */
-void
+   An interrupt handler cannot acquire a lock, so it does not 
+   make sense to try to release a lock within an interrupt 
+   handler. */ 
+void 
 lock_release (struct lock *lock) 
 {
   ASSERT (lock != NULL);
