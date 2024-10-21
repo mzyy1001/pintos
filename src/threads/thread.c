@@ -387,8 +387,8 @@ void
 thread_set_priority (int new_priority) 
 {
   struct thread *cur = thread_current();
-  cur->priority = new_priority;
   enum intr_level old_level = intr_disable();
+  cur->priority = new_priority;
 
   /* Ensures this thread is correctly placed in the waiters list of the
      lock it's waiting for */
@@ -397,19 +397,9 @@ thread_set_priority (int new_priority)
     list_insert_ordered(&cur->waiting_lock->semaphore.waiters, &cur->elem, &priority_more, NULL);
   }
 
-  if (!list_empty(&ready_list) && !intr_context()) {
-    for (struct list_elem *e = list_begin(&ready_list); 
-          e != list_end(&ready_list); e = list_next(e)) {
-      struct thread *t = list_entry(e, struct thread, elem);
-
-      // Yield if a thread with a higher priority is found 
-      if (get_thread_priority(t) > new_priority) {
-        intr_set_level(old_level);
-        thread_yield();
-        return;
-      }
-    }
-  }
+  intr_set_level(old_level);
+  thread_yield();
+  return;
 }
 
 /* Returns the current thread's priority. */
