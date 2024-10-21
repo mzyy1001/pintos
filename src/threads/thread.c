@@ -441,8 +441,8 @@ get_thread_priority(struct thread *t) {
       for (f = list_begin (&l->donors); f != list_end (&l->donors);
            f = list_next(f)) 
         {
-          struct donor *d = list_entry(f, struct donor, donor_elem);
-          int max_p = get_thread_priority(d->t);
+          struct thread *t = list_entry(f, struct thread, donor_elem);
+          int max_p = get_thread_priority(t);
           p = (p > max_p) ? p : max_p;
         }
     }
