@@ -37,7 +37,6 @@ extern test_func test_mlfqs_fair_20;
 extern test_func test_mlfqs_nice_2;
 extern test_func test_mlfqs_nice_10;
 extern test_func test_mlfqs_block;
-extern test_func bsd_test;
 #endif
 
 void msg (const char *, ...);

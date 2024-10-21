@@ -1,9 +1,0 @@
-{
-    "files.associations": {
-        "stdint.h": "c",
-        "synch.h": "c",
-        "palloc.h": "c",
-        "process.h": "c",
-        "string.h": "c"
-    }
-}

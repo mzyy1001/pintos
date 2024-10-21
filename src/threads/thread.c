@@ -80,7 +80,7 @@ void print_thread(struct thread *t);
 void print_current_thread(void);
 void update_priority(struct thread *t);
 int thread_get_ready(void);
-Float calcualte_recent(Float recent_cpu,int nice);
+Float calculate_recent(Float recent_cpu,int nice);
 int calculate_priority(Float recent_cpu,int nice);
 
 /* Initializes the threading system by transforming the code
@@ -247,7 +247,9 @@ thread_block (void)
 {
   ASSERT (!intr_context ());
   ASSERT (intr_get_level () == INTR_OFF);
-  thread_update_priority();
+  if (thread_mlfqs) {
+      thread_update_priority();
+  }
   thread_current ()->status = THREAD_BLOCKED;
   schedule ();
 }
@@ -257,8 +259,10 @@ thread_block (void)
 void
 print_thread(struct thread *t)
 {
-  printf("%s status: %d priority: %d nice:%d recentcpu:%d\n",
-  t->name,t->status,t->priority,t->nice,FLOAT_TO_INT(FLOAT_MUL_INT(t->recent_cpu,100)));
+  #ifdef debug
+    printf("%s status: %d priority: %d nice:%d recentcpu:%d\n",
+    t->name,t->status,t->priority,t->nice,FLOAT_TO_INT(FLOAT_MUL_INT(t->recent_cpu,100)));
+  #endif
 }
 /*just for debug*/
 void
@@ -296,7 +300,10 @@ thread_unblock (struct thread *t)
   old_level = intr_disable ();
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
-  update_priority(t);
+  if (thread_mlfqs) {
+    update_priority(t);
+  }
+
   yield_if_needed(t->priority);
   intr_set_level (old_level);
 }
@@ -447,8 +454,8 @@ thread_set_priority (int new_priority)
         return;
       }
     }
-
   }
+  intr_set_level(old_level);
 }
 
 /* Returns the current thread's priority. */
@@ -459,18 +466,14 @@ thread_get_priority (void)
 }
 
 int
-calculate_priority(Float recent_cpu,int nice) 
+calculate_priority(Float recent_cpu, int nice)
 {
   Float recent_cpu_div_4 = FLOAT_DIV_INT(recent_cpu, 4);
   Float nice_times_2 = INT_TO_FLOAT(nice * 2);
   Float priority = FLOAT_SUB(INT_TO_FLOAT(PRI_MAX), recent_cpu_div_4);
-  int i_priority = FLOAT_TO_INT(FLOAT_SUB(priority, nice_times_2));
+  int i_priority = FLOAT_TO_INT_ROUND(FLOAT_SUB(priority, nice_times_2));
   i_priority = min(i_priority,63); // check up_bound
   i_priority = max(i_priority,0); // check low_bound
-  // printf("*&*& %d %d %d &*&*\n",
-  // FLOAT_TO_INT(FLOAT_MUL_INT(recent_cpu_div_4,100)),
-  // FLOAT_TO_INT(FLOAT_MUL_INT(nice_times_2,100)),
-  // FLOAT_TO_INT(FLOAT_MUL_INT(priority,100)));
   return i_priority;
 }
 
@@ -481,8 +484,6 @@ thread_update_priority(void)
   Float recent_cpu = thread_get_recent_cpu();
   int nice = thread_get_nice();
   int priority = calculate_priority(recent_cpu,nice);
-  // printf("%d %d nice\n",nice, priority);
-  // printf("readylist: %d\n",thread_get_ready());
   thread_set_priority(priority);
 }
 
@@ -531,7 +532,7 @@ thread_get_recent_cpu (void)
 }
 
 Float 
-calcualte_recent(Float recent_cpu,int nice)
+calculate_recent(Float recent_cpu,int nice)
 {
   Float two_load_avg = FLOAT_MUL(load_avg, INT_TO_FLOAT(2));
   Float denominator = FLOAT_ADD(two_load_avg, INT_TO_FLOAT(1));
@@ -551,7 +552,7 @@ thread_update_recent (void)
     if (t != idle_thread) {
       Float recent_cpu = t->recent_cpu;
       int nice = t->nice;
-      t->recent_cpu = calcualte_recent(recent_cpu,nice);
+      t->recent_cpu = calculate_recent(recent_cpu,nice);
       update_priority(t);
     }
   }
@@ -581,8 +582,8 @@ thread_update_load(void)
   if (thread_current() != idle_thread) {
     ready_threads++;
   }
-  /*load_avg = (59/60) * load_avg + (1/60) * ready_threads;*/
-  load_avg = FLOAT_DIV_INT(FLOAT_ADD_INT(FLOAT_MUL_INT(load_avg,59),ready_threads),60);
+
+  load_avg = FLOAT_ADD_INT(FLOAT_MUL_INT(FLOAT_MUL_INT(load_avg,59),60),ready_threads);
 }
 
 
@@ -672,9 +673,10 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
-  t->recent_cpu = INT_TO_FLOAT(0);
-  t->nice = 0;
-
+  if (thread_mlfqs) {
+    t->recent_cpu = INT_TO_FLOAT(0);
+    t->nice = 0;
+  }
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
