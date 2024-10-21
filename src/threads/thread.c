@@ -386,6 +386,7 @@ priority_more(
 void
 thread_set_priority (int new_priority) 
 {
+  ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
   struct thread *cur = thread_current();
   enum intr_level old_level = intr_disable();
   cur->priority = new_priority;
