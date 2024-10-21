@@ -23,7 +23,7 @@ struct lock
     struct thread *holder;              /* Thread holding lock (for debugging). */
     struct semaphore semaphore;         /* Binary semaphore controlling access. */
     struct list_elem locks_elem;        /* List element for holder's locks list */
-    struct list donors;                 /* List that stores all the thread donors (chained priority) */ 
+    struct list donors;                 /* List that stores all donations to the lock */ 
   };
 
 void lock_init (struct lock *);
