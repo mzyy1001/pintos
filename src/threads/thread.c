@@ -404,35 +404,44 @@ thread_get_priority (void)
 }
 
 /* Calculates a thread's actual priority taking into account any donations.
-Works by iterates through the locks owned by the thread and recursively finding
-the priority of the locks donors. Must be called with interrupts off. */
+Works by iterates through the locks owned by the thread and finding the
+priority of the locks' donors using BFS. Must be called with interrupts off. */
 int 
 calc_thread_priority(struct thread *input_thread) {
   ASSERT (intr_get_level() == INTR_OFF);
-  int cur_max = input_thread->priority;
-  struct list_elem *final_t_lock = list_end (&(input_thread->locks));
+  int cur_max = -1;
   struct list_elem *l_elem;
 
-  /* Loop through each lock this thread has acquired to calculate donations. */
-  for (l_elem = list_begin (&(input_thread->locks)); l_elem != final_t_lock;
-       l_elem = list_next (l_elem))
-    {
-      struct list *l_donors = &(
-          list_entry (l_elem, struct lock, locks_elem)->semaphore.waiters
-      );
-      struct list_elem *d_elem;
-      struct list_elem *final_l_donor = list_end (l_donors);
+  struct list bfs_queue; 
+  list_init(&bfs_queue);
+  list_push_back(&bfs_queue, &input_thread->bfs_elem);
 
-      /* Loop through threads waiting on lock, calculating their donation. */
-      for (d_elem = list_begin (l_donors); d_elem != final_l_donor;
-           d_elem = list_next(d_elem))
-        {
-          struct thread *t = list_entry(d_elem, struct thread, elem);
-          // TODO(Replace with inbuilt max on master)
-          int max_p = calc_thread_priority(t);
-          cur_max = (cur_max > max_p) ? cur_max : max_p;
-        }
-    }
+  while (!list_empty(&bfs_queue)) {
+    struct list_elem *q_elem = list_pop_front(&bfs_queue);
+    struct thread *t = list_entry(q_elem, struct thread, bfs_elem);
+
+    cur_max = (cur_max > t->priority) ? cur_max : t->priority;
+
+    struct list_elem *final_t_lock = list_end (&t->locks);
+
+    for (l_elem = list_begin (&t->locks); l_elem != final_t_lock;
+         l_elem = list_next(l_elem))
+      {
+        struct list *l_donors = &(
+          list_entry (l_elem, struct lock, locks_elem)->semaphore.waiters
+        );
+        struct list_elem *d_elem;
+        struct list_elem *final_l_donor = list_end (l_donors);
+
+        for (d_elem = list_begin (l_donors); d_elem != final_l_donor;
+             d_elem = list_next(d_elem))
+          {
+            struct thread *thread_to_push = list_entry(d_elem, struct thread, elem);
+            list_push_back(&bfs_queue, &thread_to_push->bfs_elem);
+          }
+      }
+  }
+
   return cur_max;
 }
 
