@@ -555,7 +555,6 @@ init_thread (struct thread *t, const char *name, int priority)
   /* Initialize the locks list */
   list_init(&t->locks);
 
-  t->waiting_lock = NULL;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
 

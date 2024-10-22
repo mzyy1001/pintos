@@ -194,15 +194,7 @@ lock_init (struct lock *lock)
    interrupt handler.  This function may be called with
    interrupts disabled, but interrupts will be turned back on if
    we need to sleep.
-   
-   This sets the current thread's waiting_lock attribute to point
-   to lock. Then a new instance of donor is created to make it
-   known to the lock that it is being donated to by current 
-   thread. We add this donor to the list of the lock's donors,
-   attempt to acquire the lock. Once acquired, remove it from 
-   list of lock's donors and the lock to the list of the 
-   thread's locks. 
-    */
+   */
 void
 lock_acquire (struct lock *lock)
 {
@@ -211,13 +203,11 @@ lock_acquire (struct lock *lock)
   ASSERT (!lock_held_by_current_thread (lock));
 
   struct thread *cur = thread_current();
-  cur->waiting_lock = lock;
 
 
 
   sema_down (&lock->semaphore);
 
-  cur->waiting_lock = NULL;
   lock->holder = cur;
   list_push_front(&cur->locks, &lock->locks_elem);
 }
