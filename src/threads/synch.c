@@ -110,11 +110,11 @@ sema_try_down (struct semaphore *sema)
 void
 sema_up (struct semaphore *sema) 
 {
-  enum intr_level old_level;
+  enum intr_level old_level; 
 
-  ASSERT (sema != NULL);
+  ASSERT (sema != NULL); 
 
-  old_level = intr_disable ();
+  old_level = intr_disable (); 
   sema->value++;
   if (!list_empty (&sema->waiters)) {
     thread_unblock (list_entry (list_pop_front (&sema->waiters),
@@ -193,7 +193,16 @@ lock_init (struct lock *lock)
    This function may sleep, so it must not be called within an
    interrupt handler.  This function may be called with
    interrupts disabled, but interrupts will be turned back on if
-   we need to sleep. */
+   we need to sleep.
+   
+   This sets the current thread's waiting_lock attribute to point
+   to lock. Then a new instance of donor is created to make it
+   known to the lock that it is being donated to by current 
+   thread. We add this donor to the list of the lock's donors,
+   attempt to acquire the lock. Once acquired, remove it from 
+   list of lock's donors and the lock to the list of the 
+   thread's locks. 
+    */
 void
 lock_acquire (struct lock *lock)
 {
@@ -239,7 +248,10 @@ lock_try_acquire (struct lock *lock)
 
    An interrupt handler cannot acquire a lock, so it does not 
    make sense to try to release a lock within an interrupt 
-   handler. */ 
+   handler.
+   
+   It also removes the lock from the thread's list of locks.
+*/ 
 void 
 lock_release (struct lock *lock) 
 {
