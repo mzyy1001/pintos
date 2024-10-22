@@ -68,9 +68,7 @@ sema_down (struct semaphore *sema)
   old_level = intr_disable ();
   while (sema->value == 0) 
     {
-      list_insert_ordered(
-        &sema->waiters, &thread_current ()->elem, priority_more, NULL
-      );
+      list_push_front(&sema->waiters, &thread_current ()->elem);
       thread_block ();
     }
   sema->value--;
@@ -117,8 +115,9 @@ sema_up (struct semaphore *sema)
   old_level = intr_disable (); 
   sema->value++;
   if (!list_empty (&sema->waiters)) {
-    thread_unblock (list_entry (list_pop_front (&sema->waiters),
-                                struct thread, elem));
+    struct list_elem * max_elem = list_max (&sema->waiters, priority_less, NULL);
+    list_remove(max_elem);
+    thread_unblock (list_entry (max_elem,struct thread, elem));
   } 
   
   intr_set_level (old_level);
@@ -294,17 +293,17 @@ cond_init (struct condition *cond)
 
 /* Comparison function for thread priorities */
 static bool
-priority_less_semelem(
+priority_less_sem_elem(
   const struct list_elem *a, const struct list_elem *b, void *aux UNUSED
   )
 {
-  struct list_elem *a_max = list_begin(
-    &(list_entry(a, struct semaphore_elem, elem)->semaphore.waiters)
+  struct list_elem *a_max = list_max(
+    &(list_entry(a, struct semaphore_elem, elem)->semaphore.waiters), priority_less, NULL
     );
-  struct list_elem *b_max = list_begin(
-    &(list_entry(b, struct semaphore_elem, elem)->semaphore.waiters)
+  struct list_elem *b_max = list_max(
+    &(list_entry(b, struct semaphore_elem, elem)->semaphore.waiters), priority_less, NULL
     );
-  return (!priority_more(a_max, b_max , NULL));
+  return (priority_less(a_max, b_max , NULL));
 }
 
 /* Atomically releases LOCK and waits for COND to be signaled by
@@ -360,7 +359,7 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
   ASSERT (lock_held_by_current_thread (lock));
 
   if (!list_empty (&cond->waiters)) {
-    struct list_elem *max_elem =  list_max(&cond->waiters, priority_less_semelem, NULL);
+    struct list_elem *max_elem =  list_max(&cond->waiters, priority_less_sem_elem, NULL);
     list_remove(max_elem);
     sema_up (&list_entry (max_elem,struct semaphore_elem, elem)->semaphore);
   }

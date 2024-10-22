@@ -258,7 +258,7 @@ thread_unblock (struct thread *t)
   ASSERT (t->status == THREAD_BLOCKED);
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
-  yield_if_needed(get_thread_priority(t));
+  yield_if_needed(calc_thread_priority(t));
   intr_set_level (old_level);
 }
 
@@ -369,18 +369,18 @@ thread_foreach (thread_action_func *func, void *aux)
     }
 }
 
-/* Comparison function for thread priorities */
+/* Comparison function for thread priorities, called with interrupts off. */
 bool
-priority_more(
-  const struct list_elem *a, const struct list_elem *b, void *aux UNUSED
-  )
+priority_less(
+    const struct list_elem *a, const struct list_elem *b, void *aux UNUSED
+)
 {
-  int64_t priority_a = get_thread_priority(list_entry(a, struct thread, elem));
-  int64_t priority_b = get_thread_priority(list_entry(b, struct thread, elem));
-  return priority_a > priority_b;
+  ASSERT (intr_get_level() == INTR_OFF);
+  int64_t priority_a = calc_thread_priority(list_entry(a, struct thread, elem));
+  int64_t priority_b = calc_thread_priority(list_entry(b, struct thread, elem));
+  return priority_a < priority_b;
 }
 
-// TODO(Implemnt locks)
 /* Sets the current thread's priority to new_priority, yields the thread
   if it is no longer the highest priority thread. */
 void
@@ -388,57 +388,52 @@ thread_set_priority (int new_priority)
 {
   ASSERT (PRI_MIN <= new_priority && new_priority <= PRI_MAX);
   struct thread *cur = thread_current();
-  enum intr_level old_level = intr_disable();
   cur->priority = new_priority;
-
-  /* Ensures this thread is correctly placed in the waiters list of the
-     lock it's waiting for */
-  if (cur->waiting_lock != NULL) {
-    list_remove(&cur->elem);
-    list_insert_ordered(&cur->waiting_lock->semaphore.waiters, &cur->elem, &priority_more, NULL);
-  }
-
-  intr_set_level(old_level);
   thread_yield();
   return;
 }
 
-/* Returns the current thread's priority. */
+/* Returns the current thread's priority (including donations). */
 int
 thread_get_priority (void) 
 {
-  return get_thread_priority(thread_current());
+  enum intr_level old_level = intr_disable();
+  int thread_priority = calc_thread_priority(thread_current());
+  intr_set_level(old_level);
+  return thread_priority;
 }
 
-/* Gets a thread's priority taking into account any donations.
-   It iterates through the locks owned by the thread and then 
-   recursively finds the priority of any of its donors, by 
-   iterating through the donors of the locks (hence the nested
-   for loop). It then recursively calls function on the thread
-   donors and then takes the max of all the threads that have 
-   donated to it.
- */
+/* Calculates a thread's actual priority taking into account any donations.
+Works by iterates through the locks owned by the thread and recursively finding
+the priority of the locks donors. Must be called with interrupts off. */
 int 
-get_thread_priority(struct thread *t) {
-  int p = t->priority;
+calc_thread_priority(struct thread *input_thread) {
+  ASSERT (intr_get_level() == INTR_OFF);
+  int cur_max = input_thread->priority;
+  struct list_elem *final_t_lock = list_end (&(input_thread->locks));
+  struct list_elem *l_elem;
 
-  struct list_elem *e;
-  for (e = list_begin (&t->locks); e != list_end (&t->locks);
-       e = list_next (e))
+  /* Loop through each lock this thread has acquired to calculate donations. */
+  for (l_elem = list_begin (&(input_thread->locks)); l_elem != final_t_lock;
+       l_elem = list_next (l_elem))
     {
-      struct lock *l = list_entry (e, struct lock, locks_elem);
-      struct list_elem *f;
+      struct list *l_donors = &(
+          list_entry (l_elem, struct lock, locks_elem)->donors
+      );
+      struct list_elem *d_elem;
+      struct list_elem *final_l_donor = list_end (l_donors);
 
-      for (f = list_begin (&l->donors); f != list_end (&l->donors);
-           f = list_next(f)) 
+      /* Loop through threads waiting on lock, calculating their donation. */
+      for (d_elem = list_begin (l_donors); d_elem != final_l_donor;
+           d_elem = list_next(d_elem))
         {
-          struct thread *t = list_entry(f, struct thread, donor_elem);
-          int max_p = get_thread_priority(t);
-          p = (p > max_p) ? p : max_p;
+          struct thread *t = list_entry(d_elem, struct thread, donor_elem);
+          // TODO(Replace with inbuilt max on master)
+          int max_p = calc_thread_priority(t);
+          cur_max = (cur_max > max_p) ? cur_max : max_p;
         }
     }
-
-  return p;
+  return cur_max;
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -596,12 +591,12 @@ next_thread_to_run (void)
     enum intr_level old_level = intr_disable();     // Disable interrupts to protect the ready list
 
     struct list_elem *highest_priority_elem = list_begin(&ready_list);
-    int64_t max_priority = get_thread_priority(list_entry(highest_priority_elem, struct thread, elem));
+    int64_t max_priority = calc_thread_priority(list_entry(highest_priority_elem, struct thread, elem));
 
     /* Iterate over the entire list to find the highest-priority thread */
     for (struct list_elem *cur_elem = list_begin(&ready_list); cur_elem != list_end(&ready_list); cur_elem = list_next(cur_elem)) {
       struct thread *cur_thread = list_entry(cur_elem, struct thread, elem);
-      int64_t cur_priority = get_thread_priority(cur_thread);
+      int64_t cur_priority = calc_thread_priority(cur_thread);
 
       if (cur_priority > max_priority) {
         highest_priority_elem = cur_elem;
