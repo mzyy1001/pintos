@@ -418,7 +418,7 @@ calc_thread_priority(struct thread *input_thread) {
        l_elem = list_next (l_elem))
     {
       struct list *l_donors = &(
-          list_entry (l_elem, struct lock, locks_elem)->donors
+          list_entry (l_elem, struct lock, locks_elem)->semaphore.waiters
       );
       struct list_elem *d_elem;
       struct list_elem *final_l_donor = list_end (l_donors);
@@ -427,7 +427,7 @@ calc_thread_priority(struct thread *input_thread) {
       for (d_elem = list_begin (l_donors); d_elem != final_l_donor;
            d_elem = list_next(d_elem))
         {
-          struct thread *t = list_entry(d_elem, struct thread, donor_elem);
+          struct thread *t = list_entry(d_elem, struct thread, elem);
           // TODO(Replace with inbuilt max on master)
           int max_p = calc_thread_priority(t);
           cur_max = (cur_max > max_p) ? cur_max : max_p;

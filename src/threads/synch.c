@@ -183,7 +183,6 @@ lock_init (struct lock *lock)
   ASSERT (lock != NULL);
 
   lock->holder = NULL;
-  list_init(&lock->donors);
   sema_init (&lock->semaphore, 1);
 }
 
@@ -215,13 +214,11 @@ lock_acquire (struct lock *lock)
   cur->waiting_lock = lock;
 
 
-  list_push_front(&lock->donors, &cur->donor_elem);
 
   sema_down (&lock->semaphore);
 
   cur->waiting_lock = NULL;
   lock->holder = cur;
-  list_remove(&cur->donor_elem);
   list_push_front(&cur->locks, &lock->locks_elem);
 }
 

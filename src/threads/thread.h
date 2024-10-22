@@ -94,8 +94,6 @@ struct thread
    /* Shared between thread.c and synch.c. */
    struct list_elem elem;              /* List element. */
 
-   struct list_elem donor_elem;        /* List element for lock's donors list*/
-
    struct lock *waiting_lock;          /* Lock this thread is waiting on */
    struct list locks;                  /* List of locks that thread has acquired */
 
