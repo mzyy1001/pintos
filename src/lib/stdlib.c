@@ -90,7 +90,7 @@ do_compare (unsigned char *array, size_t a_idx, size_t b_idx, size_t size,
   return compare (array + (a_idx - 1) * size, array + (b_idx - 1) * size, aux);
 }
 
-/* "Float down" the element with 1-based index I in ARRAY of CNT
+/* "f_point down" the element with 1-based index I in ARRAY of CNT
    elements of SIZE bytes each, using COMPARE to compare
    elements, passing AUX as auxiliary data. */
 static void

@@ -4,47 +4,48 @@
 #include <stdint.h>  
 
 #define FLOAT_Q 14           
-#define FLOAT_F (1 << 14)    /* Scaling factor */
+#define FLOAT_F (1 << FLOAT_Q)    /* Scaling factor */
  
-/* Float type alias for int32_t handles internal fixed-point representation */
-typedef int32_t Float;
+/* f_point type alias for int32_t handles internal fixed-point representation */
+typedef int32_t f_point;
 
 /* Maximum and minimum */
 #define FLOAT_MAX INT32_MAX
 #define FLOAT_MIN INT32_MIN
 
 /* Convert from integer */
-#define INT_TO_FLOAT(n) ((Float)((n) * FLOAT_F))
+#define INT_TO_FLOAT(n) ((f_point)((n) * FLOAT_F))
 
 /* Convert to integer */
-#define FLOAT_TO_INT(x) ((int)((x) / FLOAT_F))
+#define FLOAT_TO_INT(x) ((x) / FLOAT_F)
 
 /* Convert to Round int */
 #define FLOAT_TO_INT_ROUND(x) (((x) >= 0) ? (((x) + FLOAT_F / 2) / FLOAT_F) : (((x) - FLOAT_F / 2) / FLOAT_F))
 
-/* Float + float */
+/* f_point + float */
 #define FLOAT_ADD(x, y) ((x) + (y))
 
-/* Float - float */
+/* f_point - float */
 #define FLOAT_SUB(x, y) ((x) - (y))
 
 /* Int + float */
-#define FLOAT_ADD_INT(x, n) ((x) + (n) * FLOAT_F)
+#define FLOAT_ADD_INT(x, n) (FLOAT_ADD((x), INT_TO_FLOAT(n)))
 
-/* Float - int */
-#define FLOAT_SUB_INT(x, n) ((x) - (n) * FLOAT_F)
+/* f_point - int */
+#define FLOAT_SUB_INT(x, n) (FLOAT_SUB((x), INT_TO_FLOAT(n)))
 
-/* Float * int */
-#define FLOAT_MUL_INT(x, n) ((x) * (n))
-
-/* Float / float */
-#define FLOAT_DIV_INT(x, n) ((x) / (n))
-
-/* Float * float */
-#define FLOAT_MUL(x, y) ((Float)((int64_t)(x) * ((y) / FLOAT_F)))
+/* f_point * float */
+#define FLOAT_MUL(x, y) ((f_point)((int64_t)(x) * ((y) / FLOAT_F)))
 
 /* Divide two fixed-point numbers */
-#define FLOAT_DIV(x, y) ((Float)(((int64_t)(x) * FLOAT_F) / (y)))
+#define FLOAT_DIV(x, y) ((f_point)(((int64_t) (x)) * FLOAT_F / (y)))
+
+/* f_point * int */
+#define FLOAT_MUL_INT(x, n) (FLOAT_MUL((x), INT_TO_FLOAT(n)))
+
+/* f_point / float */
+#define FLOAT_DIV_INT(x, n) (FLOAT_DIV((x), INT_TO_FLOAT(n)))
+
 
 /* Comparison */
 #define FLOAT_LESS(x, y) ((x) < (y))

@@ -5,8 +5,9 @@
 #include <list.h>
 #include <stdint.h>
 #include <float.h>
+#include "devices/timer.h"
 
-extern Float load_avg;   
+extern f_point load_avg;
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -21,6 +22,12 @@ enum thread_status
    You can redefine this to whatever type you like. */
 typedef int tid_t;
 #define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
+
+/* Frequency of updates to recent_cpu. */
+#define CALC_FREQ 4
+
+/* Used to multiply values by 100 for mlfqs getter functions. */
+#define MLFQS_RETURN_FACTOR 100
 
 /* Thread priorities. */
 #define PRI_MIN 0                       /* Lowest priority. */
@@ -92,7 +99,7 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
     int nice;                           /* Niceness*/
-    Float recent_cpu;                     /* Recent CPU*/
+    f_point recent_cpu;                     /* Recent CPU*/
     struct list_elem allelem;           /* List element for all threads list. */
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
@@ -133,7 +140,6 @@ void thread_exit (void) NO_RETURN;
 void thread_yield (void);
 
 /*update for load_avg and recent_CPU*/
-void thread_update_recent (void);
 void thread_update_load(void);
 
 /* Performs some operation on thread t, given auxiliary data AUX. */
@@ -148,12 +154,9 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
-void update_priority(struct thread *);
+void update_priority(struct thread *, void *);
 
 bool thread_is_idle(struct thread *);
-void thread_recent_add(void);
-
-/*just for debugs*/
-void print_all_lists(void);
+void thread_recent_increment(struct thread*);
 
 #endif /* threads/thread.h */

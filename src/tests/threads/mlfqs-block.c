@@ -49,7 +49,6 @@ test_mlfqs_block (void)
 static void
 block_thread (void *lock_) 
 {
-  print_all_lists();
   struct lock *lock = lock_;
   int64_t start_time;
 

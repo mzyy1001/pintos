@@ -197,23 +197,6 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
-  /*update the recent_cpu and load_average in times of timer_freq*/
-  if(thread_mlfqs)
-  {
-    if(ticks % TIMER_FREQ == 0){
-      thread_update_load();
-      thread_update_recent();
-      #ifdef debug
-        printf("seconds: %lld\n",ticks/TIMER_FREQ);
-        print_all_lists();
-      #endif
-    }
-    else if(!(ticks % 4)) {
-      update_priority(thread_current());
-    }
-  }
-
-  thread_recent_add();
   struct sleeping_thread *st;
   
   enum intr_level old_level = intr_disable ();
