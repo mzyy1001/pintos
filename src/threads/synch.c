@@ -115,7 +115,9 @@ sema_up (struct semaphore *sema)
   old_level = intr_disable (); 
   sema->value++;
   if (!list_empty (&sema->waiters)) {
-    struct list_elem * max_elem = list_max (&sema->waiters, priority_less, NULL);
+    struct list_elem * max_elem = list_max (
+        &sema->waiters, priority_less, NULL
+    );
     list_remove(max_elem);
     thread_unblock (list_entry (max_elem,struct thread, elem));
   } 
@@ -291,18 +293,21 @@ cond_init (struct condition *cond)
   list_init (&cond->waiters);
 }
 
-/* Comparison function for thread priorities */
+/* Comparison function for thread priorities. */
 static bool
 priority_less_sem_elem(
   const struct list_elem *a, const struct list_elem *b, void *aux UNUSED
   )
 {
+  ASSERT (intr_get_level() == INTR_OFF);
   struct list_elem *a_max = list_max(
-    &(list_entry(a, struct semaphore_elem, elem)->semaphore.waiters), priority_less, NULL
-    );
+    &(list_entry(a, struct semaphore_elem, elem)->semaphore.waiters),
+    priority_less,
+    NULL);
   struct list_elem *b_max = list_max(
-    &(list_entry(b, struct semaphore_elem, elem)->semaphore.waiters), priority_less, NULL
-    );
+    &(list_entry(b, struct semaphore_elem, elem)->semaphore.waiters),
+    priority_less,
+    NULL);
   return (priority_less(a_max, b_max , NULL));
 }
 
@@ -359,9 +364,13 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
   ASSERT (lock_held_by_current_thread (lock));
 
   if (!list_empty (&cond->waiters)) {
-    struct list_elem *max_elem =  list_max(&cond->waiters, priority_less_sem_elem, NULL);
+    enum intr_level old_level = intr_disable();
+    struct list_elem *max_elem =  list_max(
+        &cond->waiters, priority_less_sem_elem, NULL
+    );
     list_remove(max_elem);
     sema_up (&list_entry (max_elem,struct semaphore_elem, elem)->semaphore);
+    intr_set_level(old_level);
   }
     
 }
