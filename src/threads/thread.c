@@ -26,7 +26,9 @@
 
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
+static struct list ready_list_mlfq[64];
 static struct list ready_list;
+
 
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
@@ -76,11 +78,21 @@ static void schedule (void);
 static tid_t allocate_tid (void);
 void thread_schedule_tail (struct thread *prev);
 void thread_update_priority(void);
+void init_ready_list(void);
+void thread_add_to_ready_list(struct thread *t);
+bool ready_is_empty(void);
 static void thread_update_recent_cpu (struct thread *t, void *aux UNUSED);
-
 int thread_get_ready(void);
 f_point calculate_recent(f_point recent_cpu,int nice);
 int calculate_priority(f_point recent_cpu,int nice);
+
+/*init ready*/
+void init_ready_list(void) 
+{
+    for (int i = 0; i < 64; i++) {
+        list_init(&ready_list_mlfq[i]);
+    }
+}
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -101,8 +113,15 @@ thread_init (void)
   ASSERT (intr_get_level () == INTR_OFF);
   load_avg = INT_TO_FLOAT(0);
 
-  lock_init (&tid_lock);
-  list_init (&ready_list);
+  lock_init (&tid_lock); 
+  if(thread_mlfqs) 
+  {
+    init_ready_list();
+  }
+  else
+  {
+    list_init (&ready_list);
+  }
   list_init (&all_list);
 
   /* Set up a thread structure for the running thread. */
@@ -135,9 +154,33 @@ size_t
 threads_ready (void)
 {
   enum intr_level old_level = intr_disable ();
-  size_t ready_thread_count = list_size (&ready_list);
+  size_t ready_thread_count;
+  if(thread_mlfqs)
+  {
+    ready_thread_count = list_size (&ready_list_mlfq[0]);
+    for(int i = 1; i < 64; i++) 
+    {
+      ready_thread_count += list_size (&ready_list_mlfq[i]);
+    }
+  }
+  else
+  {
+    ready_thread_count = list_size (&ready_list);
+  }
   intr_set_level (old_level);
   return ready_thread_count;
+}
+/*add thread to ready list*/
+void thread_add_to_ready_list(struct thread *t) 
+{
+  if(!thread_mlfqs) 
+  {
+    list_push_back (&ready_list, &t->elem);
+    return;
+  }
+  ASSERT(t->priority >= 0 && t->priority < 64);
+  list_push_back(&ready_list_mlfq[t->priority], &t->elem);
+  update_priority(t, NULL);
 }
 
 /* Called by the timer interrupt handler at each timer tick.
@@ -284,14 +327,10 @@ thread_unblock (struct thread *t)
 {
   enum intr_level old_level;
   ASSERT (is_thread (t));
-  ASSERT (t->status == THREAD_BLOCKED);
+  ASSERT (t->status == THREAD_BLOCKED); 
   old_level = intr_disable ();
-  list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
-
-  if (thread_mlfqs) {
-    update_priority(t, NULL);
-  }
+  thread_add_to_ready_list(t);
   yield_if_needed(calc_thread_priority(t));
   intr_set_level (old_level);
 }
@@ -362,7 +401,7 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+    thread_add_to_ready_list(cur);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -375,7 +414,7 @@ void
 yield_if_needed(int64_t other_priority) {
   enum intr_level old_level = intr_disable();
 
-  /* Check if any thread in the ready_list has a higher priority than the current thread */
+  /* Check if any thread in the ready_list_mlfq has a higher priority than the current thread */
   if (
       (other_priority>= thread_get_priority()) 
       && !intr_context() 
@@ -585,21 +624,11 @@ thread_recent_increment(struct thread *cur_thread)
   }
 }
 
-/* Get the number of ready_threads, helper function for update load_avg. */
-int
-thread_get_ready(void)
-{
-  enum intr_level old_level = intr_disable ();
-  int n_ready_threads = list_size(&ready_list);
-  intr_set_level (old_level);
-  return n_ready_threads;
-}
-
 /* Update load average. */
 void
 thread_update_load(void)
 {
-  int ready_threads = thread_get_ready();
+  int ready_threads = threads_ready();
   if (thread_current() != idle_thread) {
     ready_threads++;
   }
@@ -624,7 +653,6 @@ idle (void *idle_started_ UNUSED)
   struct semaphore *idle_started = idle_started_;
   idle_thread = thread_current ();
   sema_up (idle_started);
-
   for (;;) 
     {
       /* Let someone else run. */
@@ -726,6 +754,12 @@ alloc_frame (struct thread *t, size_t size)
   return t->stack;
 }
 
+/*list empty help function*/
+bool 
+ready_is_empty(void) {
+  return threads_ready() == 0;
+}
+
 /* Chooses and returns the next thread to be scheduled.  Should
    return a thread from the run queue, unless the run queue is
    empty.  (If the running thread can continue running, then it
@@ -735,33 +769,45 @@ static struct thread *
 next_thread_to_run (void) 
 {
   /* Return idle thread if no thread is ready. */
-  if (list_empty(&ready_list)) {
+  if (ready_is_empty()) {
     return idle_thread; 
   } else {
-    enum intr_level old_level = intr_disable();
-
-    struct list_elem *highest_priority_elem = list_begin(&ready_list);
-    int64_t max_priority = calc_thread_priority(
-      list_entry(highest_priority_elem, struct thread, elem)
-    );
-
-    /* Iterate over the entire list to find the highest-priority thread. */
-    for (struct list_elem *cur_elem = list_begin(&ready_list); 
-      cur_elem != list_end(&ready_list); 
-      cur_elem = list_next(cur_elem)) {
-
-      struct thread *cur_thread = list_entry(cur_elem, struct thread, elem);
-      int64_t cur_priority = calc_thread_priority(cur_thread);
-      if (cur_priority > max_priority) {
-        highest_priority_elem = cur_elem;
-        max_priority = cur_priority;
+    if(thread_mlfqs) {
+      enum intr_level old_level = intr_disable();
+      for (int i = 63; i >= 0; i--) {
+        if (!list_empty(&ready_list_mlfq[i])) {
+          /* Get the first thread from the highest priority list */
+          struct list_elem *highest_priority_elem = list_pop_front(&ready_list_mlfq[i]);
+          intr_set_level(old_level);
+          return list_entry(highest_priority_elem, struct thread, elem);
+        }
       }
+      /* Remove the highest-priority thread from the ready list and return it. */
+      intr_set_level(old_level);
+      return idle_thread;
     }
+    else 
+    {
+      enum intr_level old_level = intr_disable();
+      struct list_elem *highest_priority_elem = list_begin(&ready_list);
+      int64_t max_priority = calc_thread_priority(
+        list_entry(highest_priority_elem, struct thread, elem)
+      );
+      for (struct list_elem *cur_elem = list_begin(&ready_list); 
+        cur_elem != list_end(&ready_list); 
+        cur_elem = list_next(cur_elem)) {
 
-    /* Remove the highest-priority thread from the ready list and return it. */
-    list_remove(highest_priority_elem);
-    intr_set_level(old_level);
-    return list_entry(highest_priority_elem, struct thread, elem);
+        struct thread *cur_thread = list_entry(cur_elem, struct thread, elem);
+        int64_t cur_priority = calc_thread_priority(cur_thread);
+        if (cur_priority > max_priority) {
+          highest_priority_elem = cur_elem;
+          max_priority = cur_priority;
+        }
+      }
+      list_remove(highest_priority_elem);
+      intr_set_level(old_level);
+      return list_entry(highest_priority_elem, struct thread, elem);
+    }
   }
 }
 
