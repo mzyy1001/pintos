@@ -95,16 +95,18 @@ typedef int tid_t;
    ready state is on the run queue, whereas only a thread in the
    blocked state is on a semaphore wait list. */
 struct thread
-  {
-    /* Owned by thread.c. */
-    tid_t tid;                          /* Thread identifier. */
-    enum thread_status status;          /* Thread state. */
-    char name[16];                      /* Name (for debugging purposes). */
-    uint8_t *stack;                     /* Saved stack pointer. */
-    int priority;                       /* Priority. */
-    int nice;                           /* Niceness. */
-    f_point recent_cpu;                 /* Recent CPU. */
-    struct list_elem allelem;           /* List element for all threads list. */
+{
+   /* Owned by thread.c. */
+   tid_t tid;                          /* Thread identifier. */
+   enum thread_status status;          /* Thread state. */
+   char name[16];                      /* Name (for debugging purposes). */
+   uint8_t *stack;                     /* Saved stack pointer. */
+   int priority;                       /* Priority. */
+   struct list_elem allelem;           /* List element for all threads list. */
+   
+   /* Shared between thread.c and synch.c. */
+   struct list_elem elem;              /* List element. */
+   struct list_elem bfs_elem;          /* List element for BFS in calc_thread_priority() */
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
