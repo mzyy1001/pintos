@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <list.h>
 #include "threads/synch.h"
+
 /* Number of timer interrupts per second. */
 #define TIMER_FREQ 100
 

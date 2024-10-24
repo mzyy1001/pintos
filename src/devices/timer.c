@@ -201,7 +201,6 @@ timer_interrupt (struct intr_frame *args UNUSED)
   
   enum intr_level old_level = intr_disable ();
   struct list_elem *cur_slept_elem = list_begin (&sleeping_list);
-  
   /* Since the sleeping list is sorted, it continues till a thread
   remains sleeping or we have awoken all available threads */
   while (!list_empty(&sleeping_list))
