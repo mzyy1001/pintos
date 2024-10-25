@@ -102,14 +102,13 @@ struct thread
    char name[16];                      /* Name (for debugging purposes). */
    uint8_t *stack;                     /* Saved stack pointer. */
    int priority;                       /* Priority. */
+   int nice;                           /* Niceness */
+   f_point recent_cpu;                 /* Recent CPU */
    struct list_elem allelem;           /* List element for all threads list. */
    
    /* Shared between thread.c and synch.c. */
    struct list_elem elem;              /* List element. */
    struct list_elem bfs_elem;          /* List element for BFS in calc_thread_priority() */
-
-    /* Shared between thread.c and synch.c. */
-    struct list_elem elem;              /* List element. */
    struct list locks;                  /* List of locks that thread has acquired */
 
 #ifdef USERPROG

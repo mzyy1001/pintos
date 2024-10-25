@@ -528,16 +528,6 @@ calc_thread_priority(struct thread *input_thread) {
       }
   }
 
-      /* Loop through threads waiting on lock, calculating their donation. */
-      for (d_elem = list_begin (l_donors); d_elem != final_l_donor;
-           d_elem = list_next(d_elem))
-        {
-          int max_p = calc_thread_priority(
-            list_entry(d_elem, struct thread, elem)
-          );
-          cur_max = MAX(cur_max, max_p);
-        }
-    }
   return cur_max;
 }
 
