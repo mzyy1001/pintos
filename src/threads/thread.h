@@ -29,11 +29,15 @@ typedef int tid_t;
 /* Used to multiply values by 100 for mlfqs getter functions. */
 #define MLFQS_RETURN_FACTOR 100
 
+/* Bounds on nice value. */
+#define NICE_MIN -20
+#define NICE_MAX 20
+
 /* Thread priorities. */
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
-//#define debug
+
 /* A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -91,18 +95,21 @@ typedef int tid_t;
    ready state is on the run queue, whereas only a thread in the
    blocked state is on a semaphore wait list. */
 struct thread
-  {
-    /* Owned by thread.c. */
-    tid_t tid;                          /* Thread identifier. */
-    enum thread_status status;          /* Thread state. */
-    char name[16];                      /* Name (for debugging purposes). */
-    uint8_t *stack;                     /* Saved stack pointer. */
-    int priority;                       /* Priority. */
-    int nice;                           /* Niceness*/
-    f_point recent_cpu;                     /* Recent CPU*/
-    struct list_elem allelem;           /* List element for all threads list. */
-    /* Shared between thread.c and synch.c. */
-    struct list_elem elem;              /* List element. */
+{
+   /* Owned by thread.c. */
+   tid_t tid;                          /* Thread identifier. */
+   enum thread_status status;          /* Thread state. */
+   char name[16];                      /* Name (for debugging purposes). */
+   uint8_t *stack;                     /* Saved stack pointer. */
+   int priority;                       /* Priority. */
+   int nice;                           /* Niceness */
+   f_point recent_cpu;                 /* Recent CPU */
+   struct list_elem allelem;           /* List element for all threads list. */
+   
+   /* Shared between thread.c and synch.c. */
+   struct list_elem elem;              /* List element. */
+   struct list_elem bfs_elem;          /* List element for BFS in calc_thread_priority() */
+   struct list locks;                  /* List of locks that thread has acquired */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -146,8 +153,9 @@ void thread_update_load(void);
 typedef void thread_action_func (struct thread *t, void *aux);
 void thread_foreach (thread_action_func *, void *);
 
-bool priority_more (const struct list_elem *, const struct list_elem *, void *);
+bool priority_less (const struct list_elem *, const struct list_elem *, void *);
 int thread_get_priority (void);
+int calc_thread_priority (struct thread *);
 void thread_set_priority (int);
 
 int thread_get_nice (void);

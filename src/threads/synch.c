@@ -68,9 +68,7 @@ sema_down (struct semaphore *sema)
   old_level = intr_disable ();
   while (sema->value == 0) 
     {
-      list_insert_ordered(
-        &sema->waiters, &thread_current ()->elem, priority_more, NULL
-      );
+      list_push_front(&sema->waiters, &thread_current ()->elem);
       thread_block ();
     }
   sema->value--;
@@ -110,15 +108,18 @@ sema_try_down (struct semaphore *sema)
 void
 sema_up (struct semaphore *sema) 
 {
-  enum intr_level old_level;
+  enum intr_level old_level; 
 
-  ASSERT (sema != NULL);
+  ASSERT (sema != NULL); 
 
-  old_level = intr_disable ();
+  old_level = intr_disable (); 
   sema->value++;
   if (!list_empty (&sema->waiters)) {
-    thread_unblock (list_entry (list_pop_front (&sema->waiters),
-                                struct thread, elem));
+    struct list_elem * max_elem = list_max (
+        &sema->waiters, priority_less, NULL
+    );
+    list_remove(max_elem);
+    thread_unblock (list_entry (max_elem,struct thread, elem));
   } 
   
   intr_set_level (old_level);
@@ -192,7 +193,8 @@ lock_init (struct lock *lock)
    This function may sleep, so it must not be called within an
    interrupt handler.  This function may be called with
    interrupts disabled, but interrupts will be turned back on if
-   we need to sleep. */
+   we need to sleep.
+   */
 void
 lock_acquire (struct lock *lock)
 {
@@ -200,8 +202,14 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  struct thread *cur = thread_current();
+
+
+
   sema_down (&lock->semaphore);
-  lock->holder = thread_current ();
+
+  lock->holder = cur;
+  list_push_front(&cur->locks, &lock->locks_elem);
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -226,16 +234,20 @@ lock_try_acquire (struct lock *lock)
 
 /* Releases LOCK, which must be owned by the current thread.
 
-   An interrupt handler cannot acquire a lock, so it does not
-   make sense to try to release a lock within an interrupt
-   handler. */
-void
+   An interrupt handler cannot acquire a lock, so it does not 
+   make sense to try to release a lock within an interrupt 
+   handler.
+   
+   It also removes the lock from the thread's list of locks.
+*/ 
+void 
 lock_release (struct lock *lock) 
 {
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
   lock->holder = NULL;
+  list_remove(&lock->locks_elem);
   sema_up (&lock->semaphore);
 }
 
@@ -268,19 +280,22 @@ cond_init (struct condition *cond)
   list_init (&cond->waiters);
 }
 
-/* Comparison function for thread priorities */
+/* Comparison function for thread priorities. */
 static bool
-priority_less_semelem(
+priority_less_sem_elem(
   const struct list_elem *a, const struct list_elem *b, void *aux UNUSED
   )
 {
-  struct list_elem *a_max = list_begin(
-    &(list_entry(a, struct semaphore_elem, elem)->semaphore.waiters)
-    );
-  struct list_elem *b_max = list_begin(
-    &(list_entry(b, struct semaphore_elem, elem)->semaphore.waiters)
-    );
-  return (!priority_more(a_max, b_max , NULL));
+  ASSERT (intr_get_level() == INTR_OFF);
+  struct list_elem *a_max = list_max(
+    &(list_entry(a, struct semaphore_elem, elem)->semaphore.waiters),
+    priority_less,
+    NULL);
+  struct list_elem *b_max = list_max(
+    &(list_entry(b, struct semaphore_elem, elem)->semaphore.waiters),
+    priority_less,
+    NULL);
+  return (priority_less(a_max, b_max , NULL));
 }
 
 /* Atomically releases LOCK and waits for COND to be signaled by
@@ -336,9 +351,13 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
   ASSERT (lock_held_by_current_thread (lock));
 
   if (!list_empty (&cond->waiters)) {
-    struct list_elem *max_elem =  list_max(&cond->waiters, priority_less_semelem, NULL);
+    enum intr_level old_level = intr_disable();
+    struct list_elem *max_elem =  list_max(
+        &cond->waiters, priority_less_sem_elem, NULL
+    );
     list_remove(max_elem);
     sema_up (&list_entry (max_elem,struct semaphore_elem, elem)->semaphore);
+    intr_set_level(old_level);
   }
     
 }
