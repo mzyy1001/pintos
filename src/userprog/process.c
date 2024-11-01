@@ -38,11 +38,39 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+  int length = strlen(fn_copy);
+  char *args_copy = malloc((length + 1) * sizeof(char));
+  strlcpy(args_copy, fn_copy, length);
+
+  char *saveptr;
+  char *token = strtok_r(args_copy, " ", &saveptr);
+
+
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
   return tid;
+}
+
+/* Takes a string as an argument and counts number of tokens
+   that it contains (assuming whitespace to be the only 
+   delimiter). This is useful for argument passing.
+   */
+int
+countTokens(const char *s) {
+  int count = 0;
+  int in_token = 0;
+
+  for (; *s != '/0'; s++) {
+    if (!in_token && *s != ' ') {
+      in_token++;
+      count++;
+    } else if (in_token && *s == ' ') {
+      in_token--;
+    }
+  }
+  return count;
 }
 
 /* A thread function that loads a user process and starts it
@@ -248,9 +276,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
     {
       struct Elf32_Phdr phdr;
 
-      if (file_ofs < 0 || file_ofs > file_length (file))
-        goto done;
-      file_seek (file, file_ofs);
 
       if (file_read (file, &phdr, sizeof phdr) != sizeof phdr)
         goto done;
