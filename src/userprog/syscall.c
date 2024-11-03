@@ -31,7 +31,11 @@ halt (void) {
 If the process’s parent waits for it, this is what will be returned. */
 void
 exit (int status) {
-  //TODO()
+  struct thread *cur = thread_current();
+  cur->exit_status = status;
+  printf("Process %s exited with status %d\n", cur->name, status);
+  process_exit();
+  thread_exit();
 }
 
 /* Runs the executable whose name is given in cmd line, passing any given
@@ -49,11 +53,8 @@ executable. You must use appropriate synchronization to ensure this.
 */
 }
 
-int
-wait (pid_t pid){
-  //TODO()
-  return -1;
-  /*
+
+/*
 Waits for a child process pid and retrieves the child’s exit status.
 If pid is still alive, waits until it terminates. Then, returns the status that pid passed to exit.
 If pid did not call exit(), but was terminated by the kernel (e.g. killed due to an exception),
@@ -84,8 +85,39 @@ top of the function and then implement the wait system call in terms of process_
 Be aware that implementing this system call requires considerably more work than any of
 the others.
 */
+int wait(pid_t pid)
+{
+  struct thread *cur = thread_current();
+  struct list_elem *e;
+  struct child_info *child_info = NULL;
+  for (e = list_begin(&cur->children); e != list_end(&cur->children); e = list_next(e))
+  {
+    struct child_info *child = list_entry(e, struct child_info, elem);
+    if (child->pid == pid)
+    {
+      child_info = child;
+      break;
+    }
+  }
+  if (child_info == NULL)
+  {
+    return -1;
+  }
+  if (child_info->terminated)
+  {
+    return -1;
+  }
+  /* Wait for the child*/
+  if (!child_info->terminated)
+  {
+    sema_down(&child_info->sema);
+  }
+  int exit_status = child_info->exit_status;
+  child_info->terminated = true;
+  list_remove(&child_info->elem);
+  free(child_info);
+  return exit_status;
 }
-
 
 /* Creates a new file called file initially initial size bytes in size. Returns
 whether it was successfully created. Creating a new file doesn't open it. */
@@ -138,9 +170,38 @@ bytes actually written, which may be less than size if some bytes could not
 be written.*/
 int
 write (int fd, const void *buffer, unsigned size) {
-  // TODO()
-  return -1;
-  /* Writing past end-of-file would normally extend the file, but file growth is not implemented
+  // Check if buffer is NULL or size is 0.
+  if (buffer == NULL || size == 0) {
+        return 0;
+  }
+  int bytes_written = 0;
+  if (fd == 1) {
+        // If size is large, break it into chunks to avoid interleaving.
+        unsigned remaining = size;
+        const char *buf = buffer;
+        while (remaining > 300) {  // Write in chunks of 300 bytes.
+            putbuf(buf, 300);
+            buf += 300;
+            remaining -= 300;
+            bytes_written += 300;
+        }
+        if (remaining > 0) {
+            putbuf(buf, remaining);
+            bytes_written += remaining;
+        }
+    } else {
+        // Write to a regular file.
+        struct file *file = thread_get_file(fd);  
+        if (file == NULL) {
+            return -1;  
+        }
+        bytes_written = file_write(file, buffer, size);
+        if (bytes_written < 0) {
+            bytes_written = 0;  
+        }
+    }
+  return bytes_written;
+/* Writing past end-of-file would normally extend the file, but file growth is not implemented
 by the basic file system. The expected behaviour is to write as many bytes as possible up to
 end-of-file and return the actual number written, or 0 if no bytes could be written at all.
 Fd 1 writes to the console. Your code to write to the console should write all of buffer in

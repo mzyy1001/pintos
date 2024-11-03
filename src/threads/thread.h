@@ -6,8 +6,12 @@
 #include <stdint.h>
 #include <float.h>
 #include "devices/timer.h"
-
+#ifndef USERPROG
+#define USERPROG
+#endif
 extern f_point load_avg;
+#define MAX_FILES 1
+
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -105,7 +109,7 @@ struct thread
    int nice;                           /* Niceness */
    f_point recent_cpu;                 /* Recent CPU */
    struct list_elem allelem;           /* List element for all threads list. */
-   
+   int exit_status;                    /* Indicates whether the process completed successfully or encountered an error */
    /* Shared between thread.c and synch.c. */
    struct list_elem elem;              /* List element. */
    struct list_elem bfs_elem;          /* List element for BFS in calc_thread_priority() */
@@ -114,6 +118,9 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+    struct file *file_descriptors[MAX_FILES];
+    struct list children;         // List to keep track of child processes
+    struct semaphore wait_sema;   // Semaphore for synchronization on wait
 #endif
 
     /* Owned by thread.c. */
@@ -166,5 +173,7 @@ void update_priority(struct thread *, void *);
 
 bool thread_is_idle(struct thread *);
 void thread_recent_increment(struct thread*);
-
+#ifdef USERPROG
+struct file *thread_get_file(int fd);
+#endif
 #endif /* threads/thread.h */
