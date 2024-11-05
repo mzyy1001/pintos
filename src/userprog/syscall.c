@@ -32,7 +32,7 @@ If the process’s parent waits for it, this is what will be returned. */
 void
 exit (int status) {
   struct thread *cur = thread_current();
-  cur->exit_status = status;
+  cur->exit_status = status; //set the status exit
   printf("Process %s exited with status %d\n", cur->name, status);
   process_exit();
   thread_exit();
@@ -103,7 +103,11 @@ int wait(pid_t pid)
   {
     return -1;
   }
-  if (child_info->terminated)
+  /*
+    The process that calls wait has already called wait on pid. That is, a process may wait
+    for any given child at most once.
+  */
+  if (child_info->terminated) 
   {
     return -1;
   }
@@ -113,6 +117,7 @@ int wait(pid_t pid)
     sema_down(&child_info->sema);
   }
   int exit_status = child_info->exit_status;
+  //mark child has been terminated
   child_info->terminated = true;
   list_remove(&child_info->elem);
   free(child_info);

@@ -132,8 +132,7 @@ thread_init (void)
   initial_thread->tid = allocate_tid ();
 
   #ifdef USERPROG
-  struct thread *cur = thread_current();
-  list_init(&cur->children);
+  list_init(&initial_thread->children);
   #endif
 
 }
