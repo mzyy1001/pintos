@@ -217,7 +217,7 @@ process_exit (void)
   struct list_elem *e;
   struct list *children = &cur->children;
 
-  for (e = list_begin(&children); e != list_end(&children); e = list_next(e)) {
+  for (e = list_begin(children); e != list_end(children); e = list_next(e)) {
     struct parent_child *child_pach = list_entry(e, struct parent_child, child_elem);
     sema_down(&child_pach->sema);
 
