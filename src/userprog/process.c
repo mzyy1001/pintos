@@ -179,12 +179,23 @@ start_process (void *process_info_)
  * This function will be implemented in task 2.
  * For now, it does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  // check if child was killed by kernel
-  // check if it is indeed its child (using children list)
-  // check if parent called this on the same tid
-  // the parent thread (this one) downs the waiting sema.
+  // TODO: check if child was killed by kernel
+  // TODO: check if parent called this on the same tid
+  
+  struct list_elem *e;
+  struct list *children = &thread_current()->children;
+  for (e = list_begin(children); e != list_end(children); e = list_next(e)) {
+    struct parent_child *child_pach = 
+        list_entry(e, struct parent_child, child_elem);
+    
+    if (child_pach->child->tid == child_tid) {
+      sema_down(&child_pach->waiting);      /* wait for child to exit*/
+      return child_pach->child_exit_code;
+    }
+  }
+  //child not found
   return -1;
 }
 
