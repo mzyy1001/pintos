@@ -196,30 +196,40 @@ process_exit (void)
   uint32_t *pd;
 
   struct parent_child *parent_pach = cur->parent;
-  // TODO: change the parent parent_child struct to show child is done. also remove the child from the parent's children list
   sema_down(&parent_pach->sema); 
 
-  // TODO: Implement freeing of cur-> parent (if parent has already exited too)
 
   //if parent has exited
   if (parent_pach->parent_exit) {
     //free this parent_child struct
     free(parent_pach);
   } else {
-    //remove child from parent's children list
-    list_remove(&parent_pach->child_elem);
-    cur->parent->child_exit = true;
+    //no need to remove child from parent's children list
+    parent_pach->child_exit = true;
     //set child_exit_code???
     sema_up(&parent_pach->waiting); 
     sema_up(&parent_pach->sema);
-  } 
+  }
 
 
 
   //TODO: Traverse the list of children, letting each child know it has exited (e.g. parent_exit = true). use the sema
-  //No need to up waiting 
-    // TODO: Implement freeing of cur-> parent (if parent has already exited too)
+  struct list_elem *e;
+  struct list *children = &cur->children;
 
+  for (e = list_begin(&children); e != list_end(&children); e = list_next(e)) {
+    struct parent_child *child_pach = list_entry(e, struct parent_child, child_elem);
+    sema_down(&child_pach->sema);
+
+    if (child_pach->child_exit) {
+      free(child_pach);
+    } else {
+      child_pach->parent_exit = true;
+      //set parent exit code ???
+      //No need to up waiting 
+      sema_up(&child_pach->sema);
+    } 
+  }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
