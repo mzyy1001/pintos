@@ -194,15 +194,26 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+  struct parent_child *parent_pach = cur->parent;
   // TODO: change the parent parent_child struct to show child is done. also remove the child from the parent's children list
-  /*sema_down(&cur->parent->sema); 
-  cur->parent->child_exit = true;  
-  sema_up(&cur->parent->waiting); 
-  sema_up(&thread_current()->parent->sema);
-  */
+  sema_down(&parent_pach->sema); 
 
   // TODO: Implement freeing of cur-> parent (if parent has already exited too)
-  // TODO: Child exit code?
+
+  //if parent has exited
+  if (parent_pach->parent_exit) {
+    //free this parent_child struct
+    free(parent_pach);
+  } else {
+    //remove child from parent's children list
+    list_remove(&parent_pach->child_elem);
+    cur->parent->child_exit = true;
+    //set child_exit_code???
+    sema_up(&parent_pach->waiting); 
+    sema_up(&parent_pach->sema);
+  } 
+
 
 
   //TODO: Traverse the list of children, letting each child know it has exited (e.g. parent_exit = true). use the sema
