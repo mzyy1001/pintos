@@ -289,7 +289,8 @@ thread_create (const char *name, int priority,
   sf->eip = switch_entry;
   sf->ebp = 0;
 
-  /* initialises the parent_child struct, including pointers from parent and child threads*/
+  /* initialises the parent_child struct, including pointers 
+     from parent and child threads */
   init_parent_child(t, thread_current());
 
 
@@ -314,7 +315,7 @@ void init_parent_child(struct thread *child, struct thread *parent) {
 
   /* pointers from threads to parent_child */
   list_push_front(&parent->children, &parent_child->child_elem);
-  child->parent = &parent_child
+  child->parent = &parent_child;
 }
 
 /* Puts the current thread to sleep.  It will not be scheduled

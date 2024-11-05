@@ -181,6 +181,10 @@ start_process (void *process_info_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
+  // check if child was killed by kernel
+  // check if it is indeed its child (using children list)
+  // check if parent called this on the same tid
+  // the parent thread (this one) downs the waiting sema.
   return -1;
 }
 
@@ -190,6 +194,21 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+  // TODO: change the parent parent_child struct to show child is done. also remove the child from the parent's children list
+  /*sema_down(&cur->parent->sema); 
+  cur->parent->child_exit = true;  
+  sema_up(&cur->parent->waiting); 
+  sema_up(&thread_current()->parent->sema);
+  */
+
+  // TODO: Implement freeing of cur-> parent (if parent has already exited too)
+  // TODO: Child exit code?
+
+
+  //TODO: Traverse the list of children, letting each child know it has exited (e.g. parent_exit = true). use the sema
+  //No need to up waiting 
+    // TODO: Implement freeing of cur-> parent (if parent has already exited too)
+
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */

@@ -49,8 +49,8 @@ struct parent_child
    bool child_exit;
    int parent_exit_code;
    int child_exit_code;
-   const struct semaphore sema;
-   bool wait;
+   const struct semaphore sema;           /* access synchronisation*/
+   bool wait;                             /*TODO: do we need this?*/
    const struct semaphore waiting;
    };
 
@@ -127,12 +127,12 @@ struct thread
    struct list_elem bfs_elem;          /* List element for BFS in calc_thread_priority() */
    struct list locks;                  /* List of locks that thread has acquired */
 
-#ifdef USERPROG
+//#ifdef USERPROG
    /* Owned by userprog/process.c. */
    uint32_t *pagedir;                  /* Page directory. */
    struct list children;
    struct parent_child *parent;
-#endif
+//#endif
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
