@@ -13,6 +13,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 
 
 #ifdef USERPROG
@@ -304,7 +305,7 @@ thread_create (const char *name, int priority,
 
 /* Initialises parent_child struct */
 void init_parent_child(struct thread *child, struct thread *parent) {
-  struct parent_child *parent_child = malloc (sizeof(parent_child));
+  struct parent_child *parent_child = malloc (sizeof(struct parent_child));
   parent_child->parent = parent;
   parent_child->child = child;
   parent_child->parent_exit = false;
@@ -315,7 +316,7 @@ void init_parent_child(struct thread *child, struct thread *parent) {
 
   /* pointers from threads to parent_child */
   list_push_front(&parent->children, &parent_child->child_elem);
-  child->parent = &parent_child;
+  child->parent = parent_child;
 }
 
 /* Puts the current thread to sleep.  It will not be scheduled

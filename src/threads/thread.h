@@ -49,9 +49,9 @@ struct parent_child
    bool child_exit;
    int parent_exit_code;
    int child_exit_code;
-   const struct semaphore sema;           /* access synchronisation*/
+   struct semaphore sema;           /* access synchronisation*/
    bool wait;                             /*TODO: do we need this?*/
-   const struct semaphore waiting;
+   struct semaphore waiting;
    };
 
 /* A kernel thread or user process.
