@@ -42,15 +42,16 @@ typedef int tid_t;
 /* Used to mediate parent-child pointers */
 struct parent_child 
 {
-   struct thread *parent;
-   struct thread *child;
+   const struct thread *parent;
+   const struct thread *child;
+   struct list_elem child_elem;
    bool parent_exit;
    bool child_exit;
    int parent_exit_code;
    int child_exit_code;
-   struct semaphore sema;
+   const struct semaphore sema;
    bool wait;
-   struct semaphore waiting;
+   const struct semaphore waiting;
    };
 
 /* A kernel thread or user process.
@@ -129,7 +130,7 @@ struct thread
 #ifdef USERPROG
    /* Owned by userprog/process.c. */
    uint32_t *pagedir;                  /* Page directory. */
-   struct parent_child *children[];
+   struct list children;
    struct parent_child *parent;
 #endif
 
@@ -183,5 +184,7 @@ void update_priority(struct thread *, void *);
 
 bool thread_is_idle(struct thread *);
 void thread_recent_increment(struct thread*);
+
+void init_parent_child(struct thread *, struct thread *);
 
 #endif /* threads/thread.h */
