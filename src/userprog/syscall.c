@@ -27,15 +27,31 @@ halt (void) {
   shutdown_power_off();
 }
 
+/*help function for looking for the child info*/
+struct child_info *find_child_info(struct thread *parent, pid_t pid) {
+    struct list_elem *e;
+
+    for (e = list_begin(&parent->children); e != list_end(&parent->children); e = list_next(e)) {
+        struct child_info *child = list_entry(e, struct child_info, elem);
+        if (child->pid == pid) {
+            return child;
+        }
+    }
+    return NULL; // Return NULL if no matching child is found
+}
+
 /* Terminates the current user program, sending its exit status to the kernel.
 If the process’s parent waits for it, this is what will be returned. */
 void
 exit (int status) {
   struct thread *cur = thread_current();
-  cur->exit_status = status; //set the status exit
-  printf("Process %s exited with status %d\n", cur->name, status);
-  process_exit();
-  thread_exit();
+    if (cur->parent_child_info != NULL) {
+        cur->parent_child_info->exit_status = status;
+        cur->parent_child_info->terminated = true;
+        sema_up(&cur->parent_child_info->sema); // Signal parent
+    }
+    process_exit();
+    thread_exit();
 }
 
 /* Runs the executable whose name is given in cmd line, passing any given
@@ -88,39 +104,20 @@ the others.
 int wait(pid_t pid)
 {
   struct thread *cur = thread_current();
-  struct list_elem *e;
-  struct child_info *child_info = NULL;
-  for (e = list_begin(&cur->children); e != list_end(&cur->children); e = list_next(e))
-  {
-    struct child_info *child = list_entry(e, struct child_info, elem);
-    if (child->pid == pid)
-    {
-      child_info = child;
-      break;
-    }
+  struct child_info *child_info = find_child_info(cur, pid);
+
+  if (child_info == NULL) {
+    return -1; // The specified pid is not a direct child
   }
-  if (child_info == NULL)
-  {
-    return -1;
+
+  if (!child_info->terminated) {
+    sema_down(&child_info->sema); // Wait for the child to terminate
   }
-  /*
-    The process that calls wait has already called wait on pid. That is, a process may wait
-    for any given child at most once.
-  */
-  if (child_info->terminated) 
-  {
-    return -1;
-  }
-  /* Wait for the child*/
-  if (!child_info->terminated)
-  {
-    sema_down(&child_info->sema);
-  }
+
   int exit_status = child_info->exit_status;
-  //mark child has been terminated
-  child_info->terminated = true;
   list_remove(&child_info->elem);
-  free(child_info);
+  free(child_info); // Free the child_info struct after use
+
   return exit_status;
 }
 

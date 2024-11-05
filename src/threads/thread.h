@@ -121,6 +121,7 @@ struct thread
     struct file *file_descriptors[MAX_FILES];
     struct list children;         // List to keep track of child processes
     struct semaphore wait_sema;   // Semaphore for synchronization on wait
+    struct child_info *parent_child_info; // mark the parent of the thread
 #endif
 
     /* Owned by thread.c. */
