@@ -312,7 +312,7 @@ void init_parent_child(struct thread *child, struct thread *parent) {
   parent_child->child_exit = false;
   sema_init(&parent_child->sema, 1);
   parent_child->wait = false;
-  sema_init(&parent_child->waiting, 1);
+  sema_init(&parent_child->waiting, 0);
 
   /* pointers from threads to parent_child */
   list_push_front(&parent->children, &parent_child->child_elem);
