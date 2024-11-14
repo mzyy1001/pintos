@@ -17,6 +17,7 @@
 
 #ifdef USERPROG
 #include "userprog/process.h"
+#include "userprog/file.h"
 #endif
 
 /* Random value for struct thread's `magic' member.
@@ -646,6 +647,13 @@ thread_update_load(void)
   load_avg = FLOAT_ADD(diminished_old_avg, change_avg);
 }
 
+/* Get the next available fd and increment the counter. */
+int thread_get_fd (void){
+  t = thread_current();
+  next_fd = t->next_free_fd;
+  t ->next_free_fd ++;
+  return next_fd;
+}
 
 /* Idle thread.  Executes when no other thread is ready to run.
 
@@ -716,6 +724,24 @@ is_thread (struct thread *t)
   return t != NULL && t->magic == THREAD_MAGIC;
 }
 
+/* Returns the hash of the file_descriptor_element. */
+// TODO(May want to modify to have the hash be a function of the fd tpp tp
+//  prevent many collisions occurring due to one file being opened a lot)
+unsigned
+fd_elem_hash (const struct hash_elem *a, void *aux UNUSED)
+{
+  struct file_descriptor_element *a = hash_entry (a, struct file_descriptor_element, hash_elem);
+  return file_hash (a->file_pointer);
+}
+
+/* Compares 2 file descriptor elements using their fds. */
+bool
+fd_elem_less(const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED) {
+  file_descriptor_element *aa = hash_entry(a, struct file_descriptor_element, hash_elem);
+  file_descriptor_element *bb = hash_entry(b, struct file_descriptor_element, hash_elem);
+  return (aa->fd < bb->fd);
+}
+
 /* Does basic initialization of T as a blocked thread named
    NAME. */
 static void
@@ -735,6 +761,10 @@ init_thread (struct thread *t, const char *name, int priority)
     t->recent_cpu = INT_TO_FLOAT(0);
     t->nice = 0;
   }
+  #ifdef USERPROG
+    hash_init(t->file_descriptor_table, fd_elem_hash, fd_elem_less, NULL);
+    t->next_free_fd = 0;
+  #endif
   
   t->status = THREAD_BLOCKED;
   strlcpy (t->name, name, sizeof t->name);

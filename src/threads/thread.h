@@ -38,6 +38,13 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+/* An entry into the file descriptor table. */
+struct file_descriptor_element{
+  int fd;
+  struct file *file_pointer;
+  struct hash_elem hash_elem;
+};
+
 /* A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -105,7 +112,7 @@ struct thread
    int nice;                           /* Niceness */
    f_point recent_cpu;                 /* Recent CPU */
    struct list_elem allelem;           /* List element for all threads list. */
-   
+
    /* Shared between thread.c and synch.c. */
    struct list_elem elem;              /* List element. */
    struct list_elem bfs_elem;          /* List element for BFS in calc_thread_priority() */
@@ -114,6 +121,8 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+    struct hash *file_descriptor_table;
+    int next_free_fd;
 #endif
 
     /* Owned by thread.c. */
@@ -167,4 +176,5 @@ void update_priority(struct thread *, void *);
 bool thread_is_idle(struct thread *);
 void thread_recent_increment(struct thread*);
 
+int thread_get_fd (void);
 #endif /* threads/thread.h */
