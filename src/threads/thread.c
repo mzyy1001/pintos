@@ -416,13 +416,17 @@ yield_if_needed(int64_t other_priority) {
 
   /* Check if any thread in the ready_list_mlfq has a higher priority than the current thread */
   if (
-      (other_priority>= thread_get_priority()) 
-      && !intr_context() 
+      (other_priority> thread_get_priority())
       && thread_current()!= idle_thread
     ) {
-      intr_set_level(old_level);
+    intr_set_level(old_level);
+    if (!intr_context()) {
       thread_yield();
-      return;
+    }
+    else {
+      intr_yield_on_return();
+    }
+    return;
   }
 
   intr_set_level(old_level); 
@@ -468,11 +472,12 @@ thread_set_priority (int new_priority)
 
   ASSERT (PRI_MIN <= new_priority && new_priority <= PRI_MAX);
   thread_current()->priority = new_priority;
-  /* Whilst this could lead to a lower priority thread running for too long,
-  it ensures that none of the possible errors occur due to yielding in an 
-  interrupt context (even aside from asserts).*/
+
   if (!intr_context()) {
     thread_yield();
+  }
+  else {
+    intr_yield_on_return();
   }
 }
 
