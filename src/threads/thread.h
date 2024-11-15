@@ -6,9 +6,7 @@
 #include <stdint.h>
 #include <float.h>
 #include "devices/timer.h"
-#ifndef USERPROG
-#define USERPROG
-#endif
+
 extern f_point load_avg;
 #define MAX_FILES 1
 
@@ -125,7 +123,6 @@ struct thread
    int nice;                           /* Niceness */
    f_point recent_cpu;                 /* Recent CPU */
    struct list_elem allelem;           /* List element for all threads list. */
-   int exit_status;                    /* Indicates whether the process completed successfully or encountered an error */
    /* Shared between thread.c and synch.c. */
    struct list_elem elem;              /* List element. */
    struct list_elem bfs_elem;          /* List element for BFS in calc_thread_priority() */
@@ -188,6 +185,9 @@ void update_priority(struct thread *, void *);
 
 bool thread_is_idle(struct thread *);
 void thread_recent_increment(struct thread*);
+
+#ifdef USERPROG
+struct file *thread_get_file(int fd);
 
 void init_parent_child(struct thread *, struct thread *);
 
