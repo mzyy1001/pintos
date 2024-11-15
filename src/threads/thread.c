@@ -20,6 +20,7 @@
 #include "userprog/process.h"
 #endif
 
+
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
    of thread.h for details. */
@@ -131,6 +132,11 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+
+  #ifdef USERPROG
+  list_init(&initial_thread->children);
+  #endif
+
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -926,6 +932,18 @@ allocate_tid (void)
 
   return tid;
 }
+
+#ifdef USERPROG
+/*return the file the thread needs to be write in*/
+struct file *thread_get_file(int fd) {
+    struct thread *cur = thread_current();
+    if (fd < 0 || fd >= MAX_FILES) {
+        return NULL;  // Invalid file descriptor.
+    }
+    return cur->file_descriptors[fd];
+}
+#endif
+
 
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
