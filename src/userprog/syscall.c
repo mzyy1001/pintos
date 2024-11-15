@@ -5,6 +5,8 @@
 #include "threads/thread.h"
 #include "devices/shutdown.h"
 #include "pagedir.h"
+#include "process.h"
+
 
 static void syscall_handler (struct intr_frame *);
 
@@ -27,31 +29,14 @@ halt (void) {
   shutdown_power_off();
 }
 
-/*help function for looking for the child info*/
-struct child_info *find_child_info(struct thread *parent, pid_t pid) {
-    struct list_elem *e;
-
-    for (e = list_begin(&parent->children); e != list_end(&parent->children); e = list_next(e)) {
-        struct child_info *child = list_entry(e, struct child_info, elem);
-        if (child->pid == pid) {
-            return child;
-        }
-    }
-    return NULL; // Return NULL if no matching child is found
-}
 
 /* Terminates the current user program, sending its exit status to the kernel.
 If the process’s parent waits for it, this is what will be returned. */
 void
 exit (int status) {
   struct thread *cur = thread_current();
-    if (cur->parent_child_info != NULL) {
-        cur->parent_child_info->exit_status = status;
-        cur->parent_child_info->terminated = true;
-        sema_up(&cur->parent_child_info->sema); // Signal parent
-    }
-    process_exit();
-    thread_exit();
+  process_exit();
+  thread_exit();
 }
 
 /* Runs the executable whose name is given in cmd line, passing any given
@@ -103,22 +88,7 @@ the others.
 */
 int wait(pid_t pid)
 {
-  struct thread *cur = thread_current();
-  struct child_info *child_info = find_child_info(cur, pid);
-
-  if (child_info == NULL) {
-    return -1; // The specified pid is not a direct child
-  }
-
-  if (!child_info->terminated) {
-    sema_down(&child_info->sema); // Wait for the child to terminate
-  }
-
-  int exit_status = child_info->exit_status;
-  list_remove(&child_info->elem);
-  free(child_info); // Free the child_info struct after use
-
-  return exit_status;
+  return process_wait(pid);
 }
 
 /* Creates a new file called file initially initial size bytes in size. Returns
