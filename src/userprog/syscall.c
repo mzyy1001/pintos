@@ -35,6 +35,7 @@ If the process’s parent waits for it, this is what will be returned. */
 void
 exit (int status) {
   struct thread *cur = thread_current();
+  cur->parent->child_exit_code = status;
   process_exit();
   thread_exit();
 }

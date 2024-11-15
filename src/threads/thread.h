@@ -49,10 +49,9 @@ struct parent_child
    struct list_elem child_elem;
    bool parent_exit;
    bool child_exit;
-   int parent_exit_code;
    int child_exit_code;
    struct semaphore sema;           /* access synchronisation*/
-   bool wait;                             /*TODO: do we need this?*/
+   bool wait;                       /* to check if wait is called twice */
    struct semaphore waiting;
    };
 

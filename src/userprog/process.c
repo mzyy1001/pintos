@@ -180,8 +180,6 @@ start_process (void *process_info_)
 int
 process_wait (tid_t child_tid) 
 {
-  // TODO: check if child was killed by kernel
-  // TODO: check if parent called this on the same tid
   
   struct list_elem *e;
   struct list *children = &thread_current()->children;
@@ -190,6 +188,24 @@ process_wait (tid_t child_tid)
         list_entry(e, struct parent_child, child_elem);
     
     if (child_pach->child->tid == child_tid) {
+      // child found!
+
+      /* check if child was killed by kernel. 
+      basically check if child is dead and its exit code is -1 */
+      if (child_pach->child_exit == true && child_pach->child_exit_code == -1) {
+        return -1;
+      }
+
+      // check if parent called this on the same tiD
+      if (child_pach->wait == true) {
+        return -1;
+      }
+
+      /* synchronised modification of child_pach */
+      sema_down(&child_pach->sema);
+      child_pach->wait = true;
+      sema_up(&child_pach->sema);
+
       sema_down(&child_pach->waiting);      /* wait for child to exit*/
       return child_pach->child_exit_code;
     }
@@ -216,14 +232,14 @@ process_exit (void)
   } else {
     //no need to remove child from parent's children list
     parent_pach->child_exit = true;
-    //set child_exit_code???
+
     sema_up(&parent_pach->waiting); 
     sema_up(&parent_pach->sema);
   }
 
 
 
-  //TODO: Traverse the list of children, letting each child know it has exited (e.g. parent_exit = true). use the sema
+  // Traverse the list of children, letting each child know it has exited (e.g. parent_exit = true). use the sema
   struct list_elem *e;
   struct list *children = &cur->children;
 
