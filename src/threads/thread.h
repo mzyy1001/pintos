@@ -6,7 +6,9 @@
 #include <stdint.h>
 #include <float.h>
 #include "devices/timer.h"
-
+#ifndef USERPROG
+   #define USERPROG
+#endif
 extern f_point load_avg;
 
 /* States in a thread's life cycle. */
