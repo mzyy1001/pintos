@@ -5,4 +5,5 @@
 
 void syscall_init (void);
 
+extern struct semaphore filesys_mutex;
 #endif /* userprog/syscall.h */

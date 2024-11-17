@@ -13,11 +13,12 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
-
+#include "lib/kernel/hash.h"
 
 #ifdef USERPROG
 #include "userprog/process.h"
-#include "userprog/file.h"
+#include "filesys/file.h"
+#include "threads/malloc.h"
 #endif
 
 /* Random value for struct thread's `magic' member.
@@ -66,6 +67,10 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-mlfqs". */
 bool thread_mlfqs;
+
+/* Semaphore to ensure safe use of filesystem. */
+// TODO(Consider if this is better placed in another file (like syscall))
+static struct semaphore filesys_mutex;
 
 static void kernel_thread (thread_func *, void *aux);
 
@@ -124,6 +129,7 @@ thread_init (void)
     list_init (&ready_list);
   }
   list_init (&all_list);
+  sema_init(&filesys_mutex, 1);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -369,6 +375,12 @@ thread_tid (void)
   return thread_current ()->tid;
 }
 
+/* Calls free on the given hash element. */
+static void
+hash_elem_free(struct hash_elem *e, void *aux UNUSED) {
+  free(e);
+}
+
 /* Deschedules the current thread and destroys it.  Never
    returns to the caller. */
 void
@@ -378,6 +390,7 @@ thread_exit (void)
 
 #ifdef USERPROG
   process_exit ();
+  hash_destroy (thread_current()->file_descriptor_table, &hash_elem_free);
 #endif
 
   /* Remove thread from all threads list, set our status to dying,
@@ -386,6 +399,7 @@ thread_exit (void)
   intr_disable ();
   list_remove (&thread_current()->allelem);
   thread_current ()->status = THREAD_DYING;
+  // TODO(POSSIBLE MEMORY LEAK WITH THE LISTS HERE);
   schedule ();
   NOT_REACHED ();
 }
@@ -648,11 +662,31 @@ thread_update_load(void)
 }
 
 /* Get the next available fd and increment the counter. */
-int thread_get_fd (void){
-  t = thread_current();
-  next_fd = t->next_free_fd;
+int
+thread_get_fd (void){
+  struct thread *t = thread_current();
+  int next_fd = t->next_free_fd;
   t ->next_free_fd ++;
   return next_fd;
+}
+
+/* Takes a file *, and attempt to generate an fd and create a
+file_descriptor_element. Returns -1 on a failed addition, the fd otherwise. */
+int
+fd_table_add (struct file* file) {
+  // TODO(This malloc is extremely dangerous as if a thread is killed or something else this table needs flushing);
+  struct file_descriptor_element *new_fd = malloc(sizeof (struct file_descriptor_element));
+  /* Unable to allocate memory, operation fails. */
+  // TODO(Consider terminating the process in such a case as that may free up memory, needs thought)
+  if (new_fd == NULL) {
+    return -1;
+  }
+  new_fd->fd = thread_get_fd();
+  new_fd->file_pointer = file;
+  struct hash *hash_table = thread_current()->file_descriptor_table;
+  struct list *bucket = find_bucket (hash_table, new_fd->hash_elem);
+  insert_elem (hash_table, bucket, new_fd->hash_elem);
+  return new_fd->fd;
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -725,21 +759,20 @@ is_thread (struct thread *t)
 }
 
 /* Returns the hash of the file_descriptor_element. */
-// TODO(May want to modify to have the hash be a function of the fd tpp tp
-//  prevent many collisions occurring due to one file being opened a lot)
-unsigned
-fd_elem_hash (const struct hash_elem *a, void *aux UNUSED)
+// TODO(May want to change the implementation)
+static unsigned
+fd_elem_hash (struct hash_elem *a, void *aux UNUSED)
 {
-  struct file_descriptor_element *a = hash_entry (a, struct file_descriptor_element, hash_elem);
-  return file_hash (a->file_pointer);
+  struct file_descriptor_element *fd_elem_a = hash_entry (a, struct file_descriptor_element, hash_elem);
+  return hash_int (fd_elem_a->fd);
 }
 
 /* Compares 2 file descriptor elements using their fds. */
-bool
-fd_elem_less(const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED) {
-  file_descriptor_element *aa = hash_entry(a, struct file_descriptor_element, hash_elem);
-  file_descriptor_element *bb = hash_entry(b, struct file_descriptor_element, hash_elem);
-  return (aa->fd < bb->fd);
+static bool
+fd_elem_less(const struct hash_elem *a, struct hash_elem *b, void *aux UNUSED) {
+  struct file_descriptor_element *fd_elem_a = hash_entry(a, struct file_descriptor_element, hash_elem);
+  struct file_descriptor_element *fd_elem_b = hash_entry(b, struct file_descriptor_element, hash_elem);
+  return (fd_elem_a->fd > fd_elem_b->fd);
 }
 
 /* Does basic initialization of T as a blocked thread named

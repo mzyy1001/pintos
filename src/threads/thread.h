@@ -42,7 +42,7 @@ typedef int tid_t;
 struct file_descriptor_element{
   int fd;
   struct file *file_pointer;
-  struct hash_elem hash_elem;
+  struct hash_elem *hash_elem;
 };
 
 /* A kernel thread or user process.
@@ -118,11 +118,11 @@ struct thread
    struct list_elem bfs_elem;          /* List element for BFS in calc_thread_priority() */
    struct list locks;                  /* List of locks that thread has acquired */
 
+  struct hash *file_descriptor_table;
+  int next_free_fd;
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
-    struct hash *file_descriptor_table;
-    int next_free_fd;
 #endif
 
     /* Owned by thread.c. */
@@ -177,4 +177,5 @@ bool thread_is_idle(struct thread *);
 void thread_recent_increment(struct thread*);
 
 int thread_get_fd (void);
+struct file *fd_table_get (int); 
 #endif /* threads/thread.h */

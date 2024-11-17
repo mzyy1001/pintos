@@ -111,16 +111,22 @@ processes, each open returns a new file descriptor. Different file descriptors
 for a single file are closed independently in separate calls to close and they
 do not share a file position. */
 int
-open (const char *file) {
-  //TODO()
-  return -1;
+open (const char *file_name) {
+  sema_down(&filesys_mutex);
+  struct file *file = filesys_open(file_name);
+  if (file == NULL) {
+    sema_up(&filesys_mutex);
+    return -1;
+  }
+  int fd = fd_table_add(file);
+  sema_up(&filesys_mutex);
+  return fd
 }
 
-/* Returns the size, in bytes, of the file open as fd. */
+/* Returns the size, in bytes, of the file open as fd. -1 on no match. */
 int
 filesize (int fd) {
-  // TODO()
-  return -1;
+  //TODO()
 }
 
 /* Reads size bytes from the file open as fd into buffer. Returns the number
@@ -154,11 +160,6 @@ expressed in bytes from the beginning of the file (0 would be the start). */
 void
 seek (int fd, unsigned position) {
   //TODO()
-/*A seek past the current end of a file is not an error. A later read obtains 0 bytes, indicating
-end of file. Normally, a later write would extend the file, filling any unwritten gap with zeros.
-However, in PintOS files have a fixed length, so writes past end of file will return an error.
-These semantics are implemented in the file system and do not require any special effort in
-system call implementation.*/
 }
 
 /* Returns the position of the next byte to be read or written in open file fd,
@@ -166,7 +167,6 @@ expressed in bytes from the beginning of the file. */
 unsigned
 tell (int fd) {
   // TODO()
-  return 1;
 }
 
 /* Closes file descriptor fd. Exiting or terminating a process implicitly
