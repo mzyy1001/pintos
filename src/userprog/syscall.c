@@ -5,7 +5,6 @@
 #include "threads/thread.h"
 #include "devices/shutdown.h"
 #include "pagedir.h"
-#include "filesys/off_t"
 
 static void syscall_handler (struct intr_frame *);
 
@@ -121,7 +120,7 @@ open (const char *file_name) {
   }
   int fd = fd_table_add(file);
   sema_up(&filesys_mutex);
-  return fd
+  return fd;
 }
 
 /* Returns the size, in bytes, of the file open as fd. -1 on no match. */

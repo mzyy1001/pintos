@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 #include <float.h>
+#include <hash.h>
 #include "devices/timer.h"
 
 extern f_point load_avg;
@@ -42,7 +43,7 @@ typedef int tid_t;
 struct file_descriptor_element{
   int fd;
   struct file *file_pointer;
-  struct hash_elem *hash_elem;
+  struct hash_elem hash_elem;
 };
 
 /* A kernel thread or user process.
@@ -176,6 +177,7 @@ void update_priority(struct thread *, void *);
 bool thread_is_idle(struct thread *);
 void thread_recent_increment(struct thread*);
 
-int thread_get_fd (void);
 struct file *fd_table_get (int); 
+void fd_table_close (int);
+int fd_table_add (struct file*);
 #endif /* threads/thread.h */

@@ -13,7 +13,6 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
-#include "lib/kernel/hash.h"
 
 #ifdef USERPROG
 #include "userprog/process.h"
@@ -662,7 +661,7 @@ thread_update_load(void)
 }
 
 /* Get the next available fd and increment the counter. */
-int
+static int
 thread_get_fd (void){
   struct thread *t = thread_current();
   int next_fd = t->next_free_fd;
@@ -684,8 +683,9 @@ fd_table_add (struct file* file) {
   new_fd->fd = thread_get_fd();
   new_fd->file_pointer = file;
   struct hash *hash_table = thread_current()->file_descriptor_table;
-  struct list *bucket = find_bucket (hash_table, new_fd->hash_elem);
-  insert_elem (hash_table, bucket, new_fd->hash_elem);
+  hash_insert(hash_table, &(new_fd->hash_elem));
+  // TODO(May want to change implementation to check if hash_insert returned NULL which
+  // indicates adding something to the hash table that was already there (so not added))
   return new_fd->fd;
 }
 
@@ -696,12 +696,28 @@ fd_table_get (int fd) {
   struct hash *hash_table = thread_current()->file_descriptor_table;
   struct file_descriptor_element temp_elem;
   temp_elem.fd = fd;
-  struct hash_elem *result = hash_find(hash_table, temp_elem.hash_elem);
+  struct hash_elem *result = hash_find(hash_table, &(temp_elem.hash_elem));
   /* Propagate NULL.*/
   if (result == NULL) {
     return NULL;
   }
-  return (hash_entry (result, struct file_descriptor_element, hash_elem))->file_pointer;
+  return (hash_entry (result, struct file_descriptor_element, hash_elem)->file_pointer);
+}
+
+/* Takes an fd and closes it. */
+// TODO(Consider changing the implementation to return 1 on success or something like that
+// this would allow for a different response to no matching result e.g. killing the proccess)
+void
+fd_table_close (int fd) {
+  struct hash *hash_table = thread_current()->file_descriptor_table;
+  struct file_descriptor_element temp_elem;
+  temp_elem.fd = fd;
+  struct hash_elem *result = hash_delete(hash_table, &(temp_elem.hash_elem));
+  /* No open entry matching fd found.*/
+  if (result == NULL) {
+    return;
+  }
+  free (hash_entry (result, struct file_descriptor_element, hash_elem));
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -776,7 +792,7 @@ is_thread (struct thread *t)
 /* Returns the hash of the file_descriptor_element. */
 // TODO(May want to change the implementation)
 static unsigned
-fd_elem_hash (struct hash_elem *a, void *aux UNUSED)
+fd_elem_hash (const struct hash_elem *a, void *aux UNUSED)
 {
   struct file_descriptor_element *fd_elem_a = hash_entry (a, struct file_descriptor_element, hash_elem);
   return hash_int (fd_elem_a->fd);
@@ -784,7 +800,7 @@ fd_elem_hash (struct hash_elem *a, void *aux UNUSED)
 
 /* Compares 2 file descriptor elements using their fds. */
 static bool
-fd_elem_less(const struct hash_elem *a, struct hash_elem *b, void *aux UNUSED) {
+fd_elem_less(const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED) {
   struct file_descriptor_element *fd_elem_a = hash_entry(a, struct file_descriptor_element, hash_elem);
   struct file_descriptor_element *fd_elem_b = hash_entry(b, struct file_descriptor_element, hash_elem);
   return (fd_elem_a->fd > fd_elem_b->fd);
@@ -810,7 +826,7 @@ init_thread (struct thread *t, const char *name, int priority)
     t->nice = 0;
   }
   #ifdef USERPROG
-    hash_init(t->file_descriptor_table, fd_elem_hash, fd_elem_less, NULL);
+    hash_init(t->file_descriptor_table, &fd_elem_hash, &fd_elem_less, NULL);
     t->next_free_fd = 0;
   #endif
   
