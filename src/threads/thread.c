@@ -69,7 +69,7 @@ bool thread_mlfqs;
 
 /* Semaphore to ensure safe use of filesystem. */
 // TODO(Consider if this is better placed in another file (like syscall))
-static struct semaphore filesys_mutex;
+struct semaphore filesys_mutex;
 
 static void kernel_thread (thread_func *, void *aux);
 
@@ -673,19 +673,23 @@ thread_get_fd (void){
 file_descriptor_element. Returns -1 on a failed addition, the fd otherwise. */
 int
 fd_table_add (struct file* file) {
-  // TODO(This malloc is extremely dangerous as if a thread is killed or something else this table needs flushing);
+  // TODO(This malloc is extremely dangerous triple check at the end);
   struct file_descriptor_element *new_fd = malloc(sizeof (struct file_descriptor_element));
   /* Unable to allocate memory, operation fails. */
-  // TODO(Consider terminating the process in such a case as that may free up memory, needs thought)
+  // TODO(Consider terminating the process in such a case)
   if (new_fd == NULL) {
     return -1;
   }
   new_fd->fd = thread_get_fd();
   new_fd->file_pointer = file;
   struct hash *hash_table = thread_current()->file_descriptor_table;
-  hash_insert(hash_table, &(new_fd->hash_elem));
-  // TODO(May want to change implementation to check if hash_insert returned NULL which
-  // indicates adding something to the hash table that was already there (so not added))
+  struct hash_elem *added_elem = hash_insert(hash_table, &(new_fd->hash_elem));
+  // TODO(May want to change implementation if added_elem is NULL e.g. to kill the program)
+  /* Equivilent element already in table. Should never occur as thread_get_fd 
+  is strictly monotone increasing and int limit is very large. */
+  if (added_elem == NULL) {
+    free (new_fd);
+  }
   return new_fd->fd;
 }
 

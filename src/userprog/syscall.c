@@ -2,14 +2,15 @@
 #include <stdio.h>
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
-#include "threads/thread.h"
 #include "devices/shutdown.h"
 #include "pagedir.h"
 
 static void syscall_handler (struct intr_frame *);
 
+extern struct semaphore filesys_mutex;
+
 /* Used to ensure safe memory access by verifying a pointer pre-dereference.
-TODO(Should it be called with interrupts off, or will it be fine?) */
+TODO(Should it be called with interrupts off, does it need mutex aquire or will it be fine?) */
 static bool
 verify (void *vaddr) {
   if (vaddr != NULL && is_user_vaddr(vaddr)) {
@@ -136,7 +137,7 @@ filesize (int fd) {
   }
   int file_len = file_length(file);
   sema_up(&filesys_mutex);
-  return (file_length);
+  return file_len;
 }
 
 /* Reads size bytes from the file open as fd into buffer. Returns the number
@@ -176,11 +177,11 @@ seek (int fd, unsigned position) {
   }
   sema_down(&filesys_mutex);
   struct file *file = fd_table_get(fd);
-  // TODO(May want to change this behaviour to say kill the program or something)
+  // TODO(May want to change this behaviour e.g. to kill the program)
   /* No matching file found. */
   if (file == NULL) {
     sema_up(&filesys_mutex);
-    return -1;
+    return;
   }
   file_seek(file, (off_t) position);
   sema_up(&filesys_mutex);
