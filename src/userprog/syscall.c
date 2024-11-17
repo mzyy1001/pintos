@@ -91,9 +91,14 @@ the others.
 /* Creates a new file called file initially initial size bytes in size. Returns
 whether it was successfully created. Creating a new file doesn't open it. */
 bool
-create (const char *file, unsigned initial_size){
-  //TODO()
-  return false;
+create (const char *file_name, unsigned initial_size){
+  if (initial_size > INT_MAX) {
+    return false;
+  }
+  sema_down(&filesys_mutex);
+  bool file_created = filesys_create(file_name, (off_t) initial_size);
+  sema_up(&filesys_mutex);
+  return file_created;
 }
 
 /* Deletes the file called file. Returns whether it was successfully deleted.
@@ -209,7 +214,9 @@ tell (int fd) {
 closes all its open file descriptors, as if calling this function for each. */
 void
 close (int fd) {
-  // TODO()
+  sema_down(&filesys_mutex);
+  fd_table_close(fd);
+  sema_up(&filesys_mutex);
 }
 
 void
