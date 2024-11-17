@@ -5,6 +5,7 @@
 #include "threads/thread.h"
 #include "devices/shutdown.h"
 #include "pagedir.h"
+#include "filesys/off_t"
 
 static void syscall_handler (struct intr_frame *);
 
@@ -126,7 +127,17 @@ open (const char *file_name) {
 /* Returns the size, in bytes, of the file open as fd. -1 on no match. */
 int
 filesize (int fd) {
-  //TODO()
+  sema_down(&filesys_mutex);
+  struct file *file = fd_table_get(fd);
+  // TODO(May want to change this behaviour to say kill the program or something)
+  /* No matching file found. */
+  if (file == NULL) {
+    sema_up(&filesys_mutex);
+    return -1;
+  }
+  int file_len = file_length(file);
+  sema_up(&filesys_mutex);
+  return (file_length);
 }
 
 /* Reads size bytes from the file open as fd into buffer. Returns the number
@@ -166,7 +177,7 @@ seek (int fd, unsigned position) {
 expressed in bytes from the beginning of the file. */
 unsigned
 tell (int fd) {
-  // TODO()
+  //TODO()
 }
 
 /* Closes file descriptor fd. Exiting or terminating a process implicitly

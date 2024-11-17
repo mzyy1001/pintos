@@ -689,6 +689,21 @@ fd_table_add (struct file* file) {
   return new_fd->fd;
 }
 
+/* Takes an fd and returns the matching file * from the threads hashtable.
+  Still returns result on a failed match, which propagates through the NULL. */
+struct file *
+fd_table_get (int fd) {
+  struct hash *hash_table = thread_current()->file_descriptor_table;
+  struct file_descriptor_element temp_elem;
+  temp_elem.fd = fd;
+  struct hash_elem *result = hash_find(hash_table, temp_elem.hash_elem);
+  /* Propagate NULL.*/
+  if (result == NULL) {
+    return NULL;
+  }
+  return (hash_entry (result, struct file_descriptor_element, hash_elem))->file_pointer;
+}
+
 /* Idle thread.  Executes when no other thread is ready to run.
 
    The idle thread is initially put on the ready list by
