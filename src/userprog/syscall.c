@@ -170,14 +170,28 @@ may end up interleaved on the console, confusing both human readers and our grad
 expressed in bytes from the beginning of the file (0 would be the start). */
 void
 seek (int fd, unsigned position) {
-  //TODO()
+  /* Out of bounds position would overflow in type conversion. */
+  if (position > INT_MAX) {
+    // TODO(Figure out how to correctly handle such an error case)
+    return;
+  }
+  sema_down(&filesys_mutex);
+  struct file *file = fd_table_get(fd);
+  // TODO(May want to change this behaviour to say kill the program or something)
+  /* No matching file found. */
+  if (file == NULL) {
+    sema_up(&filesys_mutex);
+    return -1;
+  }
+  file_seek(file, (off_t) position);
+  sema_up(&filesys_mutex);
 }
 
 /* Returns the position of the next byte to be read or written in open file fd,
 expressed in bytes from the beginning of the file. */
 unsigned
 tell (int fd) {
-  //TODO()
+  // TODO()
 }
 
 /* Closes file descriptor fd. Exiting or terminating a process implicitly
