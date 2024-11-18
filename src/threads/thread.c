@@ -18,6 +18,8 @@
 #include "userprog/process.h"
 #include "filesys/file.h"
 #include "threads/malloc.h"
+/* Starting value for file descriptors, avoids 1 & 0 which are reserved. */
+#define FD_START_VALUE 2
 #endif
 
 /* Random value for struct thread's `magic' member.
@@ -248,7 +250,7 @@ thread_print_stats (void)
    PRIORITY, but no actual priority scheduling is implemented.
    Priority scheduling is the goal of Problem 1-3. */
 tid_t
-thread_create (const char *name, int priority,
+ thread_create (const char *name, int priority,
                thread_func *function, void *aux) 
 {
   struct thread *t;
@@ -826,7 +828,7 @@ init_thread (struct thread *t, const char *name, int priority)
   }
   #ifdef USERPROG
     hash_init(t->file_descriptor_table, &fd_elem_hash, &fd_elem_less, NULL);
-    t->next_free_fd = 0;
+    t->next_free_fd = FD_START_VALUE;
   #endif
   
   t->status = THREAD_BLOCKED;

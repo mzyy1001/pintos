@@ -7,9 +7,6 @@
 
 static void syscall_handler (struct intr_frame *);
 
-/* Semaphore to ensure safe use of filesystem. */
-static struct semaphore filesys_mutex;
-
 /* Used to ensure safe memory access by verifying a pointer pre-dereference.
 TODO(Should it be called with interrupts off, does it need mutex aquire or will it be fine?) */
 static bool
@@ -96,9 +93,9 @@ create (const char *file_name, unsigned initial_size){
   if (initial_size > INT_MAX) {
     return false;
   }
-  sema_down(&filesys_mutex);
+  acquire_filesys();
   bool creation_outcome = filesys_create(file_name, (off_t) initial_size);
-  sema_up(&filesys_mutex);
+  release_filesys();
   return creation_outcome;
 }
 
@@ -107,9 +104,9 @@ A file may be removed regardless of whether it is open or closed, and removing
 an open file does not close it. */
 bool
 remove (const char *file_name) {
-  sema_down(&filesys_mutex);
+  acquire_filesys();
   bool remove_outcome = filesys_remove(file_name);
-  sema_up(&filesys_mutex);
+  release_filesys();
   return remove_outcome;
 }
 
@@ -121,9 +118,9 @@ for a single file are closed independently in separate calls to close and they
 do not share a file position. */
 int
 open (const char *file_name) {
-  sema_down(&filesys_mutex);
+  acquire_filesys();
   struct file *file = filesys_open(file_name);
-  sema_up(&filesys_mutex);
+  release_filesys();
   if (file == NULL) {
     return -1;
   }
@@ -139,9 +136,9 @@ filesize (int fd) {
   if (file == NULL) {
     return -1;
   }
-  sema_down(&filesys_mutex);
+  acquire_filesys();
   int file_len = file_length(file);
-  sema_up(&filesys_mutex);
+  release_filesys();
   return file_len;
 }
 
@@ -187,9 +184,9 @@ seek (int fd, unsigned position) {
   if (file == NULL) {
     return;
   }
-  sema_down(&filesys_mutex);
+  acquire_filesys();
   file_seek(file, (off_t) position);
-  sema_up(&filesys_mutex);
+  release_filesys();
 }
 
 /* Returns the position of the next byte to be read or written in open file fd,
@@ -203,9 +200,9 @@ tell (int fd) {
   if (file == NULL) {
     return -1;
   }
-  sema_down(&filesys_mutex);
+  acquire_filesys();
   int file_pos = file_tell(file);
-  sema_up(&filesys_mutex);
+  release_filesys();
   return file_pos;
 }
 
@@ -214,16 +211,15 @@ closes all its open file descriptors, as if calling this function for each. */
 // TODO(Ensure this is called on all file descriptors when terminating or exiting a process)
 void
 close (int fd) {
-  sema_down(&filesys_mutex);
+  acquire_filesys();
   fd_table_close(fd);
-  sema_up(&filesys_mutex);
+  release_filesys();
 }
 
 void
 syscall_init (void) 
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
-  sema_init(&filesys_mutex, 1);
 }
 
 /* Extract a single argument and return it, moving the pointer. */
