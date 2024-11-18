@@ -96,18 +96,20 @@ create (const char *file_name, unsigned initial_size){
     return false;
   }
   sema_down(&filesys_mutex);
-  bool file_created = filesys_create(file_name, (off_t) initial_size);
+  bool creation_outcome = filesys_create(file_name, (off_t) initial_size);
   sema_up(&filesys_mutex);
-  return file_created;
+  return creation_outcome;
 }
 
 /* Deletes the file called file. Returns whether it was successfully deleted.
 A file may be removed regardless of whether it is open or closed, and removing
 an open file does not close it. */
 bool
-remove (const char *file) {
-  // TODO()
-  return false;
+remove (const char *file_name) {
+  sema_down(&filesys_mutex);
+  bool remove_outcome = filesys_remove(file_name);
+  sema_up(&filesys_mutex);
+  return remove_outcome;
 }
 
 /* Opens the file called file. Returns a nonnegative integer handle called a
@@ -212,6 +214,7 @@ tell (int fd) {
 
 /* Closes file descriptor fd. Exiting or terminating a process implicitly
 closes all its open file descriptors, as if calling this function for each. */
+// TODO(Ensure this is called on all file descriptors when terminating or exiting a process)
 void
 close (int fd) {
   sema_down(&filesys_mutex);
