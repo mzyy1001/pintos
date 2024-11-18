@@ -6,9 +6,13 @@
 #include <stdint.h>
 #include <float.h>
 #include "devices/timer.h"
+
 #ifndef USERPROG
    #define USERPROG
 #endif
+
+#define MAX_FILES 1
+
 extern f_point load_avg;
 
 /* States in a thread's life cycle. */
@@ -114,6 +118,7 @@ struct thread
    struct list locks;                  /* List of locks that thread has acquired */
 
 #ifdef USERPROG
+   struct file *file_descriptors[MAX_FILES];
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
 #endif
@@ -170,3 +175,7 @@ bool thread_is_idle(struct thread *);
 void thread_recent_increment(struct thread*);
 
 #endif /* threads/thread.h */
+
+#ifdef USERPROG
+struct file *thread_get_file(int fd);
+#endif

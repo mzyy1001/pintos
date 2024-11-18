@@ -3,8 +3,10 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "userprog/process.h"
 #include "devices/shutdown.h"
 #include "pagedir.h"
+#include "filesys/file.h"
 
 static void syscall_handler (struct intr_frame *);
 
@@ -12,6 +14,7 @@ static void syscall_handler (struct intr_frame *);
 TODO(Should it be called with interrupts off, or will it be fine?) */
 static bool
 verify (void *vaddr) {
+  printf("verify!!!\n");
   if (vaddr != NULL && is_user_vaddr(vaddr)) {
     if (pagedir_get_page(thread_current()->pagedir, vaddr) != NULL){
       return true;
@@ -31,7 +34,11 @@ halt (void) {
 If the process’s parent waits for it, this is what will be returned. */
 void
 exit (int status) {
-  //TODO()
+  printf("exit!!!\n");
+  struct thread *cur = thread_current();
+  printf("%s: exit(%d)\n", cur->name, status);
+  process_exit();
+  thread_exit();
 }
 
 /* Runs the executable whose name is given in cmd line, passing any given
@@ -138,9 +145,38 @@ bytes actually written, which may be less than size if some bytes could not
 be written.*/
 int
 write (int fd, const void *buffer, unsigned size) {
-  // TODO()
-  return -1;
-  /* Writing past end-of-file would normally extend the file, but file growth is not implemented
+  // Check if buffer is NULL or size is 0.
+  if (buffer == NULL || size == 0) {
+        return 0;
+  }
+  int bytes_written = 0;
+  if (fd == 1) {
+        // If size is large, break it into chunks to avoid interleaving.
+        unsigned remaining = size;
+        const char *buf = buffer;
+        while (remaining > 300) {  // Write in chunks of 300 bytes.
+            putbuf(buf, 300);
+            buf += 300;
+            remaining -= 300;
+            bytes_written += 300;
+        }
+        if (remaining > 0) {
+            putbuf(buf, remaining);
+            bytes_written += remaining;
+        }
+    } else {
+        // Write to a regular file.
+        struct file *file = thread_get_file(fd);  
+        if (file == NULL) {
+            return -1;  
+        }
+        bytes_written = file_write(file, buffer, size);
+        if (bytes_written < 0) {
+            bytes_written = 0;  
+        }
+    }
+  return bytes_written;
+/* Writing past end-of-file would normally extend the file, but file growth is not implemented
 by the basic file system. The expected behaviour is to write as many bytes as possible up to
 end-of-file and return the actual number written, or 0 if no bytes could be written at all.
 Fd 1 writes to the console. Your code to write to the console should write all of buffer in
@@ -220,7 +256,7 @@ syscall_handler (struct intr_frame *f)
   // TODO(MINIMISE DUPLICATION WITH HELPER FUNCTION)
   // TODO(Consider using function pointers in place of large switch statement or in combination with helper function and numb_args)
   // TODO(Ensure everything is synced as it should be)
-  if (verify(f) && verify(f->esp)) {
+  if (verify(f->esp)) {
     int *stack_pointer = f -> esp;
     switch (*stack_pointer) {
       case SYS_HALT:
