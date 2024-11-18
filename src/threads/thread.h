@@ -10,8 +10,6 @@
    #define USERPROG
 #endif
 extern f_point load_avg;
-#define MAX_FILES 1
-
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -41,21 +39,6 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
-
-
-/* Used to mediate parent-child pointers */
-struct parent_child 
-{
-   const struct thread *parent;
-   const struct thread *child;
-   struct list_elem child_elem;
-   bool parent_exit;
-   bool child_exit;
-   int child_exit_code;
-   struct semaphore sema;           /* access synchronisation*/
-   bool wait;                       /* to check if wait is called twice */
-   struct semaphore waiting;
-   };
 
 /* A kernel thread or user process.
 
@@ -124,16 +107,15 @@ struct thread
    int nice;                           /* Niceness */
    f_point recent_cpu;                 /* Recent CPU */
    struct list_elem allelem;           /* List element for all threads list. */
+   
    /* Shared between thread.c and synch.c. */
    struct list_elem elem;              /* List element. */
    struct list_elem bfs_elem;          /* List element for BFS in calc_thread_priority() */
    struct list locks;                  /* List of locks that thread has acquired */
 
 #ifdef USERPROG
-   /* Owned by userprog/process.c. */
-   uint32_t *pagedir;                  /* Page directory. */
-   struct list children;
-   struct parent_child *parent;
+    /* Owned by userprog/process.c. */
+    uint32_t *pagedir;                  /* Page directory. */
 #endif
 
     /* Owned by thread.c. */
@@ -186,10 +168,5 @@ void update_priority(struct thread *, void *);
 
 bool thread_is_idle(struct thread *);
 void thread_recent_increment(struct thread*);
-
-#ifdef USERPROG
-struct file *thread_get_file(int fd);
-
-void init_parent_child(struct thread *, struct thread *);
 
 #endif /* threads/thread.h */
