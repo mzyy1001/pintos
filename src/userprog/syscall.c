@@ -256,7 +256,7 @@ syscall_handler (struct intr_frame *f)
   // TODO(MINIMISE DUPLICATION WITH HELPER FUNCTION)
   // TODO(Consider using function pointers in place of large switch statement or in combination with helper function and numb_args)
   // TODO(Ensure everything is synced as it should be)
-  if (verify(f) && verify(f->esp)) {
+  if (verify(f->esp)) {
     int *stack_pointer = f -> esp;
     switch (*stack_pointer) {
       case SYS_HALT:
