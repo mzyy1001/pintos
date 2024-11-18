@@ -7,7 +7,8 @@
 
 static void syscall_handler (struct intr_frame *);
 
-extern struct semaphore filesys_mutex;
+/* Semaphore to ensure safe use of filesystem. */
+static struct semaphore filesys_mutex;
 
 /* Used to ensure safe memory access by verifying a pointer pre-dereference.
 TODO(Should it be called with interrupts off, does it need mutex aquire or will it be fine?) */
@@ -122,26 +123,23 @@ int
 open (const char *file_name) {
   sema_down(&filesys_mutex);
   struct file *file = filesys_open(file_name);
+  sema_up(&filesys_mutex);
   if (file == NULL) {
-    sema_up(&filesys_mutex);
     return -1;
   }
-  int fd = fd_table_add(file);
-  sema_up(&filesys_mutex);
-  return fd;
+  return fd_table_add(file);
 }
 
 /* Returns the size, in bytes, of the file open as fd. -1 on no match. */
 int
 filesize (int fd) {
-  sema_down(&filesys_mutex);
   struct file *file = fd_table_get(fd);
-  // TODO(May want to change this behaviour to say kill the program or something)
+  // TODO(May want to change this behaviour to kill the program or something)
   /* No matching file found. */
   if (file == NULL) {
-    sema_up(&filesys_mutex);
     return -1;
   }
+  sema_down(&filesys_mutex);
   int file_len = file_length(file);
   sema_up(&filesys_mutex);
   return file_len;
@@ -182,14 +180,14 @@ seek (int fd, unsigned position) {
     // TODO(Figure out how to correctly handle such an error case)
     return;
   }
-  sema_down(&filesys_mutex);
+  /* Locate and verify the file matching fd. */
   struct file *file = fd_table_get(fd);
   // TODO(May want to change this behaviour e.g. to kill the program)
   /* No matching file found. */
   if (file == NULL) {
-    sema_up(&filesys_mutex);
     return;
   }
+  sema_down(&filesys_mutex);
   file_seek(file, (off_t) position);
   sema_up(&filesys_mutex);
 }
@@ -198,18 +196,17 @@ seek (int fd, unsigned position) {
 expressed in bytes from the beginning of the file. */
 unsigned
 tell (int fd) {
-  // TODO(Very similar to lengt, may be rewritable into a function pointer set to avoid code duplication)
-  sema_down(&filesys_mutex);
+  // TODO(Very similar to filesize, may be refactorable to avoid duplication)
   struct file *file = fd_table_get(fd);
   // TODO(May want to change this behaviour to say kill the program or something)
   /* No matching file found. */
   if (file == NULL) {
-    sema_up(&filesys_mutex);
     return -1;
   }
+  sema_down(&filesys_mutex);
   int file_pos = file_tell(file);
   sema_up(&filesys_mutex);
-  return (file_pos);
+  return file_pos;
 }
 
 /* Closes file descriptor fd. Exiting or terminating a process implicitly
@@ -226,6 +223,7 @@ void
 syscall_init (void) 
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+  sema_init(&filesys_mutex, 1);
 }
 
 /* Extract a single argument and return it, moving the pointer. */

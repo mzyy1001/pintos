@@ -67,10 +67,6 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
    Controlled by kernel command-line option "-mlfqs". */
 bool thread_mlfqs;
 
-/* Semaphore to ensure safe use of filesystem. */
-// TODO(Consider if this is better placed in another file (like syscall))
-struct semaphore filesys_mutex;
-
 static void kernel_thread (thread_func *, void *aux);
 
 static void idle (void *aux UNUSED);
@@ -128,7 +124,6 @@ thread_init (void)
     list_init (&ready_list);
   }
   list_init (&all_list);
-  sema_init(&filesys_mutex, 1);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -374,10 +369,10 @@ thread_tid (void)
   return thread_current ()->tid;
 }
 
-/* Calls free on the given hash element. */
+/* Frees the file_descriptor_element of the given hash element. */
 static void
-hash_elem_free(struct hash_elem *e, void *aux UNUSED) {
-  free(e);
+fd_hash_elem_free(struct hash_elem *e, void *aux UNUSED) {
+  free(hash_entry(e, struct file_descriptor_element, hash_elem));
 }
 
 /* Deschedules the current thread and destroys it.  Never
@@ -389,7 +384,7 @@ thread_exit (void)
 
 #ifdef USERPROG
   process_exit ();
-  hash_destroy (thread_current()->file_descriptor_table, &hash_elem_free);
+  hash_destroy (thread_current()->file_descriptor_table, &fd_hash_elem_free);
 #endif
 
   /* Remove thread from all threads list, set our status to dying,
@@ -708,7 +703,7 @@ fd_table_get (int fd) {
   return (hash_entry (result, struct file_descriptor_element, hash_elem)->file_pointer);
 }
 
-/* Takes an fd and closes it. */
+/* Takes a fd and closes it. */
 // TODO(Consider changing the implementation to return 1 on success or something like that
 // this would allow for a different response to no matching result e.g. killing the proccess)
 void
@@ -721,7 +716,7 @@ fd_table_close (int fd) {
   if (result == NULL) {
     return;
   }
-  free (hash_entry (result, struct file_descriptor_element, hash_elem));
+  fd_hash_elem_free (result, NULL);
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
