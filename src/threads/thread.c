@@ -911,3 +911,13 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+#ifdef USERPROG
+/*return the file the thread needs to be write in*/
+struct file *thread_get_file(int fd) {
+    struct thread *cur = thread_current();
+    if (fd < 0 || fd >= MAX_FILES) {
+        return NULL;  // Invalid file descriptor.
+    }
+    return cur->file_descriptors[fd];
+}
+#endif
