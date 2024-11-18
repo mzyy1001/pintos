@@ -15,13 +15,40 @@
 #include "threads/init.h"
 #include "threads/interrupt.h"
 #include "threads/palloc.h"
+#include "threads/malloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
-
-
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
-static bool setup_stack (void **esp, char *file_name, char **save_ptr);
+int countTokens(char *s);
+
+/* Parsed into start_process so we know where to set the stack
+   pointer to intially. */
+struct process_info {
+  char *file_name;
+  void *initial_esp;
+};
+
+/* Takes a string as an argument and counts number of tokens
+   that it contains (assuming whitespace to be the only 
+   delimiter). This is useful for argument passing.
+   */
+int
+countTokens(char *s) {
+  int count = 0;
+  int in_token = 0;
+
+  for (char *ptr = s; *ptr != '\0'; ptr++) {
+    if (!in_token && *ptr != ' ') {
+      in_token++;
+      count++;
+    } else if (in_token && *ptr == ' ') {
+      in_token--;
+    }
+  }
+  return count;
+}
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -35,22 +62,75 @@ process_execute (const char *arguments)
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
-  args_copy  = palloc_get_page (0);
-  if (args_copy  == NULL)
-    return TID_ERROR;
-  strlcpy (args_copy , arguments, PGSIZE);
-
-  /* Parse the file name*/
-  char *file_name = strtok_r(args_copy, " ", &save_ptr);
-  if (file_name == NULL) {
-    palloc_free_page(args_copy);
+  fn_copy = palloc_get_page (0);
+  if (fn_copy == NULL) {
     return TID_ERROR;
   }
+  strlcpy (fn_copy, file_name, PGSIZE);
 
-  /* Create a new thread to execute program. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, args_copy );
-  if (tid == TID_ERROR)
-    palloc_free_page (args_copy ); 
+  /* Initialise variables needed to copy memory and complete 
+     argument passing. */
+  int length = strlen(fn_copy);
+  char *args_copy = palloc_get_page(0);
+  strlcpy(args_copy, fn_copy, length + 1);
+  char *saveptr;
+  int num_tokens = countTokens(args_copy);
+  char *tokens[num_tokens];
+  char *tok_ptrs[num_tokens + 1];
+  tok_ptrs[num_tokens] = NULL;
+
+  /* Extract tokens using whitespace as delimiter */
+  char *token = strtok_r(args_copy, " ", &saveptr);
+  tokens[0] = token;
+  
+  for (int i = 1; i < num_tokens; i++) {
+    token = strtok_r(NULL, " ", &saveptr);
+    tokens[i] = token;
+  }
+  
+  /* Push each element of argv onto stack */
+  void *ptr = fn_copy + PGSIZE;
+  for (int i = num_tokens - 1; i >= 0; i--) {
+    int len = strlen(tokens[i]);
+    ptr -= len + 1;
+    strlcpy(ptr, tokens[i], len + 1);
+    tok_ptrs[i] = ptr;
+  }
+  
+  /* Word alignment */
+  while ((uintptr_t) ptr % 4 != 0) {
+    ptr -= sizeof(uint8_t);
+    *((uint8_t *) ptr) = (uint8_t) 0;
+  }
+
+  /* Push pointers of argument vectors */
+  for (int i = num_tokens; i >= 0; i--) {
+    ptr -= sizeof(char *);
+    *((char **) ptr) = tok_ptrs[i];
+  }
+
+  /* Push pointer to argv, argc and fake return
+     address. */
+  char **argv_ptr = ptr;
+  ptr -= sizeof(char **);
+  *((char ***) ptr) = argv_ptr;
+  ptr -= sizeof(int);
+  *((int *) ptr) = num_tokens; 
+  ptr -= sizeof(void *);
+  *((void **) ptr) = 0;
+  palloc_free_page(args_copy);
+
+  /* Create process_info struct to pass into start_process */
+  struct process_info *process_info = (struct process_info *)malloc(sizeof(struct process_info));
+  process_info->file_name = fn_copy;
+  process_info->initial_esp = ptr;
+
+  /* Create a new thread to execute FILE_NAME. */
+  tid = thread_create (file_name, PRI_DEFAULT, start_process, process_info);
+  if (tid == TID_ERROR) {
+    palloc_free_page (fn_copy);
+    free(process_info);
+  }
   return tid;
 }
 
@@ -110,21 +190,84 @@ start_process (void *args_)
  * This function will be implemented in task 2.
  * For now, it does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  while (true) {
-    // Do nothing
-  }
+  
+  struct list_elem *e;
+  struct list *children = &thread_current()->children;
+  for (e = list_begin(children); e != list_end(children); e = list_next(e)) {
+    struct parent_child *child_pach = 
+        list_entry(e, struct parent_child, child_elem);
+    
+    if (child_pach->child->tid == child_tid) {
+      // child found!
 
+      /* check if child was killed by kernel. 
+      basically check if child is dead and its exit code is -1 */
+      if (child_pach->child_exit == true && child_pach->child_exit_code == -1) {
+        return -1;
+      }
+
+      // check if parent called this on the same tiD
+      if (child_pach->wait == true) {
+        return -1;
+      }
+
+      /* synchronised modification of child_pach */
+      sema_down(&child_pach->sema);
+      child_pach->wait = true;
+      sema_up(&child_pach->sema);
+
+      sema_down(&child_pach->waiting);      /* wait for child to exit*/
+      return child_pach->child_exit_code;
+    }
+  }
+  //child not found
   return -1;
 }
-
+ 
 /* Free the current process's resources. */
 void
 process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+  struct parent_child *parent_pach = cur->parent;
+  sema_down(&parent_pach->sema); 
+
+
+  //if parent has exited
+  if (parent_pach->parent_exit) {
+    //free this parent_child struct
+    free(parent_pach);
+  } else {
+    //no need to remove child from parent's children list
+    parent_pach->child_exit = true;
+
+    sema_up(&parent_pach->waiting); 
+    sema_up(&parent_pach->sema);
+  }
+
+
+
+  // Traverse the list of children, letting each child know it has exited (e.g. parent_exit = true). use the sema
+  struct list_elem *e;
+  struct list *children = &cur->children;
+
+  for (e = list_begin(children); e != list_end(children); e = list_next(e)) {
+    struct parent_child *child_pach = list_entry(e, struct parent_child, child_elem);
+    sema_down(&child_pach->sema);
+
+    if (child_pach->child_exit) {
+      free(child_pach);
+    } else {
+      child_pach->parent_exit = true;
+      //set parent exit code ???
+      //No need to up waiting 
+      sema_up(&child_pach->sema);
+    } 
+  }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -275,9 +418,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
     {
       struct Elf32_Phdr phdr;
 
-      if (file_ofs < 0 || file_ofs > file_length (file))
-        goto done;
-      file_seek (file, file_ofs);
 
       if (file_read (file, &phdr, sizeof phdr) != sizeof phdr)
         goto done;
