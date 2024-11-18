@@ -29,7 +29,7 @@ static bool setup_stack (void **esp, char *file_name, char **save_ptr);
 tid_t
 process_execute (const char *arguments) 
 {
-  char *args_copy ;
+  char *args_copy;
   tid_t tid;
   char *save_ptr;
 
@@ -46,7 +46,8 @@ process_execute (const char *arguments)
     palloc_free_page(args_copy);
     return TID_ERROR;
   }
-
+  /*revert the change of strtok_r to keep args_copy orginally*/
+  strlcpy (args_copy , arguments, PGSIZE);
   /* Create a new thread to execute program. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, args_copy );
   if (tid == TID_ERROR)
