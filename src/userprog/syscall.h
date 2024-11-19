@@ -5,7 +5,6 @@
 #include "threads/synch.h"
 #include "threads/thread.h"
 
-
 void syscall_init (void);
 
 #endif /* userprog/syscall.h */

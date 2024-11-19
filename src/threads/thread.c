@@ -13,13 +13,11 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
-#include "threads/malloc.h"
 
 
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
-
 
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
@@ -87,7 +85,6 @@ static void thread_update_recent_cpu (struct thread *t, void *aux UNUSED);
 int thread_get_ready(void);
 f_point calculate_recent(f_point recent_cpu,int nice);
 int calculate_priority(f_point recent_cpu,int nice);
-void init_parent_child(struct thread *child, struct thread *parent);
 
 /*init ready*/
 void init_ready_list(void) 
@@ -132,9 +129,6 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
-
-
-
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -294,35 +288,12 @@ thread_create (const char *name, int priority,
   sf->eip = switch_entry;
   sf->ebp = 0;
 
-  /* initialises the parent_child struct, including pointers 
-     from parent and child threads */
-  init_parent_child(t, thread_current());
-
-
   intr_set_level (old_level);
 
   /* Add to run queue. */
   thread_unblock (t);
 
   return tid;
-}
-
-/* Initialises parent_child struct */
-void init_parent_child(struct thread *child, struct thread *parent) {
-  struct parent_child *parent_child = malloc (sizeof(struct parent_child));
-  parent_child->parent = parent;
-  parent_child->child = child;
-  parent_child->parent_exit = false;
-  parent_child->child_exit = false;
-  parent_child->child_exit_code = -1; /* initialised to -1. exit syscall will modify it*/
-  parent_child->wait = false;         /* will become true if parent waits on child*/
-  sema_init(&parent_child->sema, 1);
-  parent_child->wait = false;
-  sema_init(&parent_child->waiting, 0);
-
-  /* pointers from threads to parent_child */
-  list_push_front(&parent->children, &parent_child->child_elem);
-  child->parent = parent_child;
 }
 
 /* Puts the current thread to sleep.  It will not be scheduled
@@ -445,13 +416,17 @@ yield_if_needed(int64_t other_priority) {
 
   /* Check if any thread in the ready_list_mlfq has a higher priority than the current thread */
   if (
-      (other_priority>= thread_get_priority()) 
-      && !intr_context() 
+      (other_priority> thread_get_priority())
       && thread_current()!= idle_thread
     ) {
-      intr_set_level(old_level);
+    intr_set_level(old_level);
+    if (!intr_context()) {
       thread_yield();
-      return;
+    }
+    else {
+      intr_yield_on_return();
+    }
+    return;
   }
 
   intr_set_level(old_level); 
@@ -497,11 +472,12 @@ thread_set_priority (int new_priority)
 
   ASSERT (PRI_MIN <= new_priority && new_priority <= PRI_MAX);
   thread_current()->priority = new_priority;
-  /* Whilst this could lead to a lower priority thread running for too long,
-  it ensures that none of the possible errors occur due to yielding in an 
-  interrupt context (even aside from asserts).*/
+
   if (!intr_context()) {
     thread_yield();
+  }
+  else {
+    intr_yield_on_return();
   }
 }
 
@@ -771,7 +747,6 @@ init_thread (struct thread *t, const char *name, int priority)
   /* Initialize the locks list */
   list_init(&t->locks);
 
-  list_init(&t->children);
 
   t->magic = THREAD_MAGIC;
   
@@ -933,6 +908,9 @@ allocate_tid (void)
   return tid;
 }
 
+/* Offset of `stack' member within `struct thread'.
+   Used by switch.S, which can't figure it out on its own. */
+uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 #ifdef USERPROG
 /*return the file the thread needs to be write in*/
 struct file *thread_get_file(int fd) {
@@ -943,8 +921,3 @@ struct file *thread_get_file(int fd) {
     return cur->file_descriptors[fd];
 }
 #endif
-
-
-/* Offset of `stack' member within `struct thread'.
-   Used by switch.S, which can't figure it out on its own. */
-uint32_t thread_stack_ofs = offsetof (struct thread, stack);
