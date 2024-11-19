@@ -88,7 +88,8 @@ file is opened more than once, whether by a single process or different
 processes, each open returns a new file descriptor. Different file descriptors
 for a single file are closed independently in separate calls to close and they
 do not share a file position. */
-int open(const char *filename)
+int
+open(const char *filename)
 {
   struct thread *cur = thread_current();
   struct file *file = filesys_open(filename);
@@ -286,34 +287,34 @@ syscall_handler (struct intr_frame *f)
         exit(extract_arg_1(stack_pointer));
         break;
       case SYS_EXEC:
-        exec((char *) extract_arg_1(stack_pointer));
+        f->eax = (int32_t) exec((char *) extract_arg_1(stack_pointer));
         break;
       case SYS_WAIT:
-        wait(extract_arg_1(stack_pointer));
+        f->eax = (int32_t) wait(extract_arg_1(stack_pointer));
         break;
       case SYS_CREATE:
-        create((char *) extract_arg_1(stack_pointer), (unsigned) extract_arg_2(stack_pointer));
+        f->eax = (int32_t) create((char *) extract_arg_1(stack_pointer), (unsigned) extract_arg_2(stack_pointer));
         break;
       case SYS_REMOVE:
-        remove((char *) extract_arg_1(stack_pointer));
+        f->eax = (int32_t) remove((char *) extract_arg_1(stack_pointer));
         break;
       case SYS_OPEN:
-        open((char *) extract_arg_1(stack_pointer));
+        f->eax = (int32_t) open((char *) extract_arg_1(stack_pointer));
         break;
       case SYS_FILESIZE:
-        filesize(extract_arg_1(stack_pointer));
+        f->eax = (int32_t) filesize(extract_arg_1(stack_pointer));
         break;
       case SYS_READ:
-        read(extract_arg_1(stack_pointer), (void *) extract_arg_2(stack_pointer), (unsigned) extract_arg_3(stack_pointer));
+        f->eax = (int32_t) read(extract_arg_1(stack_pointer), (void *) extract_arg_2(stack_pointer), (unsigned) extract_arg_3(stack_pointer));
         break;
       case SYS_WRITE:
-        write(extract_arg_1(stack_pointer), (void *) extract_arg_2(stack_pointer), (unsigned) extract_arg_3(stack_pointer));
+        f->eax = (int32_t) write(extract_arg_1(stack_pointer), (void *) extract_arg_2(stack_pointer), (unsigned) extract_arg_3(stack_pointer));
         break;
       case SYS_SEEK:
         seek(extract_arg_1(stack_pointer), (unsigned) extract_arg_2(stack_pointer));
         break;
       case SYS_TELL:
-        tell(extract_arg_1(stack_pointer));
+        f->eax = tell(extract_arg_1(stack_pointer));
         break;
       case SYS_CLOSE:
         close(extract_arg_1(stack_pointer));
