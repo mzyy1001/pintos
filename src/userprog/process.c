@@ -20,8 +20,8 @@
 #include <stdio.h>
 
 static thread_func start_process NO_RETURN;
-static bool load (const char *cmdline, void (**eip) (void), void **esp);
-static bool setup_stack (void **esp, char *file_name, char **save_ptr);
+static bool load (void *args_, const char *cmdline, void (**eip) (void), void **esp);
+static bool setup_stack (void **esp, void *args_, char *file_name);
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -29,7 +29,7 @@ static bool setup_stack (void **esp, char *file_name, char **save_ptr);
 tid_t
 process_execute (const char *arguments) 
 {
-  char *args_copy;
+  char *args_copy, *args_copy_two;
   tid_t tid;
   char *save_ptr;
 
@@ -39,7 +39,10 @@ process_execute (const char *arguments)
   if (args_copy  == NULL)
     return TID_ERROR;
   strlcpy (args_copy , arguments, PGSIZE);
-
+  args_copy_two  = palloc_get_page (0);
+  if (args_copy_two  == NULL)
+    return TID_ERROR;
+  strlcpy (args_copy_two , arguments, PGSIZE);
   /* Parse the file name*/
   char *file_name = strtok_r(args_copy, " ", &save_ptr);
   if (file_name == NULL) {
@@ -47,11 +50,14 @@ process_execute (const char *arguments)
     return TID_ERROR;
   }
   /*revert the change of strtok_r to keep args_copy orginally*/
-  strlcpy (args_copy , arguments, PGSIZE);
+  strlcpy (args_copy_two , arguments, PGSIZE);
   /* Create a new thread to execute program. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, args_copy );
+  tid = thread_create (file_name, PRI_DEFAULT, start_process, args_copy_two );
   if (tid == TID_ERROR)
-    palloc_free_page (args_copy ); 
+  {
+    palloc_free_page (args_copy );
+    palloc_free_page (args_copy_two );  
+  }
   return tid;
 }
 
@@ -65,15 +71,13 @@ start_process (void *args_)
   struct intr_frame if_;
   bool success;
 
-  char *save_ptr;
-  char *file_name = strtok_r(args, " ", &save_ptr);
-
+  char *file_name = thread_current()->name;
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
+  success = load (args_,file_name, &if_.eip, &if_.esp);
   /* If load failed, quit. */
   //
   palloc_free_page(args);
@@ -298,7 +302,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
    and its initial stack pointer into *ESP.
    Returns true if successful, false otherwise. */
 bool
-load (const char *file_name, void (**eip) (void), void **esp) 
+load (void *args_, const char *file_name, void (**eip) (void), void **esp) 
 {
   struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
@@ -394,9 +398,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   /* Set up stack. */
-  char *save_ptr = NULL; // Add this to initialize save_ptr
-  strtok_r((char *)file_name, " ", &save_ptr);
-  if (!setup_stack(esp, (char *)file_name, &save_ptr))
+  if (!setup_stack(esp, args_, (char *)file_name))
   {
     goto done;
   }
@@ -536,8 +538,9 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
 static bool
-setup_stack (void **esp, char *file_name, char **save_ptr) 
+setup_stack (void **esp, void *args_, char *file_name) 
 {
+  char *save_ptr = NULL;
   ASSERT(file_name != NULL);
   uint8_t *kpage;
   bool success = false;
@@ -551,16 +554,16 @@ setup_stack (void **esp, char *file_name, char **save_ptr)
       *esp = PHYS_BASE;
 
       // Push arguments onto the stack
-      char *arg = file_name;
+      char *args = args_;
       char *argv[32];
       int argc = 0;
-
+      char *arg = strtok_r(args, " ", &save_ptr);
       while (arg != NULL)
       {
         *esp -= strlen(arg) + 1;
         memcpy(*esp, arg, strlen(arg) + 1);
         argv[argc++] = *esp;
-        arg = strtok_r(NULL, " ", save_ptr);
+        arg = strtok_r(NULL, " ", &save_ptr);
       }
       // Word-align the stack
       uintptr_t align = (uintptr_t)(*esp) % 4;
@@ -570,7 +573,7 @@ setup_stack (void **esp, char *file_name, char **save_ptr)
         memset(*esp, 0, align);
       }
       // Push argument addresses
-      argv[argc] = 0; // Null-terminate argv
+      argv[argc] = NULL; // Null-terminate argv
       for (int i = argc; i >= 0; i--)
       {
         *esp -= sizeof(char *);
