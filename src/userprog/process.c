@@ -36,10 +36,8 @@ process_execute (const char *arguments)
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   args_copy  = palloc_get_page (0);
-  if (args_copy  == NULL){
+  if (args_copy  == NULL)
     return TID_ERROR;
-  }
-
   strlcpy (args_copy , arguments, PGSIZE);
   args_copy_two  = palloc_get_page (0);
   if (args_copy_two  == NULL)
@@ -160,8 +158,7 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
-
-  printf("%s: exit(%d)\n", cur->name, cur->exit_status);
+  
   struct parent_child *parent_pach = cur->parent;
   sema_down(&parent_pach->sema); 
 
@@ -321,9 +318,7 @@ load (void *args_, const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
-  acquire_filesys();
   file = filesys_open (file_name);
-  release_filesys();
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);

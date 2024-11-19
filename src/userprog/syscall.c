@@ -11,7 +11,7 @@
 static void syscall_handler (struct intr_frame *);
 
 /* Used to ensure safe memory access by verifying a pointer pre-dereference.
-TODO(Should it be called with interrupts off, does it need mutex aquire or will it be fine?) */
+TODO(Should it be called with interrupts off, or will it be fine?) */
 static bool
 verify (void *vaddr) {
   if (vaddr != NULL && is_user_vaddr(vaddr)) {
@@ -20,15 +20,6 @@ verify (void *vaddr) {
     }
   }
   return false;
-}
-
-/* Used to ensure safe memory access by verifying a string.*/
-static bool
-verify_string (char *target_string) {
-  if (target_string == NULL || *target_string == '\0') {
-    return false;
-  }
-  return true;
 }
 
 /* Terminates PintOS. This should be seldom used, because you lose some
@@ -42,7 +33,9 @@ halt (void) {
 If the process’s parent waits for it, this is what will be returned. */
 void
 exit (int status) {
-  thread_current()->exit_status = status;
+  struct thread *cur = thread_current();
+  printf("%s: exit(%d)\n", cur->name, status);
+  process_exit();
   thread_exit();
 }
 
@@ -70,30 +63,23 @@ wait (pid_t pid) {
 /* Creates a new file called file initially initial size bytes in size. Returns
 whether it was successfully created. Creating a new file doesn't open it. */
 bool
-create (const char *file_name, unsigned initial_size){
-  /* Replace 2nd & 3rd condition with string validate function */
-  if (initial_size > INT_MAX || !verify(file_name)) {
-    exit(-1);
+create (const char *file, unsigned initial_size) {
+  if (file == NULL || strlen(file) == 0) {
+    return false;
   }
-  acquire_filesys();
-  bool creation_outcome = filesys_create(file_name, (off_t) initial_size);
-  release_filesys();
-  return creation_outcome;
+
+  return filesys_create(file, initial_size);
 }
 
 /* Deletes the file called file. Returns whether it was successfully deleted.
 A file may be removed regardless of whether it is open or closed, and removing
 an open file does not close it. */
 bool
-remove (const char *file_name) {
-  /* Replace 2nd & 3rd condition with string validate function */
-  if (!verify(file_name) || *file_name == '\0') {
+remove (const char *file) {
+  if (file == NULL || strlen(file) == 0) {
     return false;
   }
-  acquire_filesys();
-  bool remove_outcome = filesys_remove(file_name);
-  release_filesys();
-  return remove_outcome;
+  return filesys_remove(file);
 }
 
 /* Opens the file called file. Returns a nonnegative integer handle called a
@@ -103,38 +89,41 @@ processes, each open returns a new file descriptor. Different file descriptors
 for a single file are closed independently in separate calls to close and they
 do not share a file position. */
 int
-open (const char *file_name) {
-  /* Replace condition with string validate function */
-  if (!verify(file_name)) {
-    exit(-1);
+open(const char *filename)
+{
+  struct thread *cur = thread_current();
+  struct file *file = filesys_open(filename);
+  if (file == NULL)
+  {
+    return -1; // File open failed
   }
-  if (*file_name == '\0') {
-   return -1;
+
+  // Find an empty slot in the file_descriptors array
+  for (int i = 2; i < MAX_FILES; i++)
+  { // Skip 0 and 1 for stdin, stdout
+    if (cur->file_descriptors[i] == NULL)
+    {
+      cur->file_descriptors[i] = file;
+      //printf("open: Assigned FD %d for file %s\n", i, filename);
+      return i; // Return the file descriptor
+    }
   }
-  acquire_filesys();
-  struct file *file = filesys_open(file_name);
-  release_filesys();
-  if (file == NULL) {
-    return -1;
-  }
-  return fd_table_add(file);
+
+  file_close(file);
+  return -1;
 }
 
-/* Returns the size, in bytes, of the file open as fd. -1 on no match. */
+/* Returns the size, in bytes, of the file open as fd. */
 int
 filesize (int fd) {
-  /* May need to add an fd check here too. */
-  struct file *file = fd_table_get(fd);
-  // TODO(May want to change this behaviour to kill the program or something)
-  /* No matching file found. */
-  /* may need to add a validate fd function to ensure fd isn't 0 or 1, and that it is less than some MAX_FD. */
-  if (file == NULL) {
-    return -1;
+  struct thread *cur = thread_current();
+
+  if (fd < 2 || fd >= MAX_FILES || cur->file_descriptors[fd] == NULL) {
+    return -1;  // Invalid file descriptor.
   }
-  acquire_filesys();
-  int file_len = file_length(file);
-  release_filesys();
-  return file_len;
+
+  struct file *file = cur->file_descriptors[fd];
+  return file_length(file);
 }
 
 /* Reads size bytes from the file open as fd into buffer. Returns the number
@@ -142,12 +131,12 @@ of bytes actually read (0 at end of file), or -1 if the file could not be read
 (excluding end of file). Fd 0 will read from keyboard.*/
 int
 read (int fd, void *buffer, unsigned size) {
-  /* Check if buffer is valid. */
-  if (!verify(buffer)) {
-    exit(-1);
+  struct thread *cur = thread_current();
+  // Check if buffer is valid.
+  if (buffer == NULL) {
+    return -1;
   }
-  /* TODO(May need to have mutex acquiring in fd 0 reading. */
-  if (fd == 0) {
+  if (fd == 0) { 
     unsigned bytes_read = 0;
     char *buf = buffer;
     for (unsigned i = 0; i < size; i++) {
@@ -156,14 +145,11 @@ read (int fd, void *buffer, unsigned size) {
     }
     return bytes_read;
   } else if (fd > 1 && fd < MAX_FILES) {
-    struct file *file = fd_table_get(fd);
+    struct file *file = cur->file_descriptors[fd];
     if (file == NULL) {
       return -1;  // Invalid file descriptor.
     }
-    acquire_filesys();
-    off_t file_red = file_read(file, buffer, size);
-    release_filesys();
-    return file_red;
+    return file_read(file, buffer, size);
   }
   return -1;  // Invalid file descriptor.
 }
@@ -173,44 +159,36 @@ bytes actually written, which may be less than size if some bytes could not
 be written.*/
 int
 write (int fd, const void *buffer, unsigned size) {
-  /* Check if buffer is invalid. */
-  if (!verify(buffer)) {
-        exit(-1);
+  // Check if buffer is NULL or size is 0.
+  if (buffer == NULL || size == 0) {
+        return 0;
   }
-  /* Check size exits, may be unnecessary. */
-  if (size == 0) {
-    return 0;
-  }
-
-  /* TODO(May need to have mutex acquiring in fd 1 writing. */
   int bytes_written = 0;
   if (fd == 1) {
-    // If size is large, break it into chunks to avoid interleaving.
-    unsigned remaining = size;
-    const char *buf = buffer;
-    while (remaining > 300) {  // Write in chunks of 300 bytes.
-        putbuf(buf, 300);
-        buf += 300;
-        remaining -= 300;
-        bytes_written += 300;
+        // If size is large, break it into chunks to avoid interleaving.
+        unsigned remaining = size;
+        const char *buf = buffer;
+        while (remaining > 300) {  // Write in chunks of 300 bytes.
+            putbuf(buf, 300);
+            buf += 300;
+            remaining -= 300;
+            bytes_written += 300;
+        }
+        if (remaining > 0) {
+            putbuf(buf, remaining);
+            bytes_written += remaining;
+        }
+    } else {
+        // Write to a regular file.
+        struct file *file = thread_get_file(fd);  
+        if (file == NULL) {
+            return -1;  
+        }
+        bytes_written = file_write(file, buffer, size);
+        if (bytes_written < 0) {
+            bytes_written = 0;  
+        }
     }
-    if (remaining > 0) {
-        putbuf(buf, remaining);
-        bytes_written += remaining;
-    }
-  } else {
-    // Write to a regular file.
-    struct file *file = fd_table_get(fd);
-    if (file == NULL) {
-      return -1;
-    }
-    acquire_filesys();
-    bytes_written = file_write(file, buffer, size);
-    release_filesys();
-    if (bytes_written < 0) {
-      bytes_written = 0;
-    }
-  }
   return bytes_written;
 /* Writing past end-of-file would normally extend the file, but file growth is not implemented
 by the basic file system. The expected behaviour is to write as many bytes as possible up to
@@ -225,51 +203,34 @@ may end up interleaved on the console, confusing both human readers and our grad
 expressed in bytes from the beginning of the file (0 would be the start). */
 void
 seek (int fd, unsigned position) {
-  /* May need to add an fd check here too. */
-  /* Out of bounds position would overflow in type conversion. */
-  if (position > INT_MAX) {
-    // TODO(Figure out how to correctly handle such an error case)
-    return;
-  }
-  /* Locate and verify the file matching fd. */
-  struct file *file = fd_table_get(fd);
-  // TODO(May want to change this behaviour e.g. to kill the program)
-  /* No matching file found. */
-  if (file == NULL) {
-    return;
-  }
-  acquire_filesys();
-  file_seek(file, (off_t) position);
-  release_filesys();
+  //TODO()
+/*A seek past the current end of a file is not an error. A later read obtains 0 bytes, indicating
+end of file. Normally, a later write would extend the file, filling any unwritten gap with zeros.
+However, in PintOS files have a fixed length, so writes past end of file will return an error.
+These semantics are implemented in the file system and do not require any special effort in
+system call implementation.*/
 }
 
 /* Returns the position of the next byte to be read or written in open file fd,
 expressed in bytes from the beginning of the file. */
 unsigned
 tell (int fd) {
-  /* May need to add an fd check here too. */
-  // TODO(Very similar to filesize, may be refactorable to avoid duplication)
-  struct file *file = fd_table_get(fd);
-  // TODO(May want to change this behaviour to say kill the program or something)
-  /* No matching file found. */
-  if (file == NULL) {
-    return -1;
-  }
-  acquire_filesys();
-  int file_pos = file_tell(file);
-  release_filesys();
-  return file_pos;
+  // TODO()
+  return 1;
 }
 
 /* Closes file descriptor fd. Exiting or terminating a process implicitly
 closes all its open file descriptors, as if calling this function for each. */
-// TODO(Ensure this is called on all file descriptors when terminating or exiting a process)
 void
 close (int fd) {
-  /* May need to add an fd check here too. */
-  acquire_filesys();
-  fd_table_close(fd);
-  release_filesys();
+  struct thread *cur = thread_current();
+
+  if (fd < 2 || fd >= MAX_FILES || cur->file_descriptors[fd] == NULL) {
+    return; 
+  }
+  struct file *file = cur->file_descriptors[fd];
+  file_close(file);
+  cur->file_descriptors[fd] = NULL;
 }
 
 void
@@ -360,7 +321,7 @@ syscall_handler (struct intr_frame *f)
         break;
       default:
         //TODO(FIGURE OUT HOW TO MORE CORRECTLY HANDLE INVALID CODE)
-        exit (-1);
+        thread_exit ();
     }
   }
   /* Invalid pointer terminates user process. */
