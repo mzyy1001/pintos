@@ -7,21 +7,6 @@
 #include "filesys/inode.h"
 #include "filesys/directory.h"
 
-#define NUMBER_OF_PARALLEL_FILESYS_USERS 1
-
-/* Semaphore to ensure safe use of filesystem. */
-static struct semaphore filesys_mutex;
-
-void
-acquire_filesys() {
-  sema_down(&filesys_mutex);
-}
-
-void
-release_filesys() {
-  sema_up(&filesys_mutex);
-}
-
 /* Partition that contains the file system. */
 struct block *fs_device;
 
@@ -33,7 +18,6 @@ void
 filesys_init (bool format) 
 {
   fs_device = block_get_role (BLOCK_FILESYS);
-  sema_init(&filesys_mutex, NUMBER_OF_PARALLEL_FILESYS_USERS);
   if (fs_device == NULL)
     PANIC ("No file system device found, can't initialize file system.");
 
