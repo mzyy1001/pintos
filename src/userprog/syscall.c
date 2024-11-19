@@ -72,7 +72,7 @@ whether it was successfully created. Creating a new file doesn't open it. */
 bool
 create (const char *file_name, unsigned initial_size){
   /* Replace 2nd & 3rd condition with string validate function */
-  if (initial_size > INT_MAX || !verify(file_name) || initial_size == 0) {
+  if (initial_size > INT_MAX || !verify(file_name)) {
     exit(-1);
   }
   acquire_filesys();
