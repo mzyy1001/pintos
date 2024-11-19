@@ -44,6 +44,20 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+/* Used to mediate parent-child pointers */
+struct parent_child 
+{
+   const struct thread *parent;
+   const struct thread *child;
+   struct list_elem child_elem;
+   bool parent_exit;
+   bool child_exit;
+   int child_exit_code;
+   struct semaphore sema;           /* access synchronisation*/
+   bool wait;                       /* to check if wait is called twice */
+   struct semaphore waiting;
+   };
+
 /* A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -119,8 +133,11 @@ struct thread
 
 #ifdef USERPROG
    struct file *file_descriptors[MAX_FILES];
-    /* Owned by userprog/process.c. */
-    uint32_t *pagedir;                  /* Page directory. */
+   /* Owned by userprog/process.c. */
+   uint32_t *pagedir;                  /* Page directory. */
+   struct list children;
+   struct parent_child *parent;
+
 #endif
 
     /* Owned by thread.c. */
@@ -178,4 +195,5 @@ void thread_recent_increment(struct thread*);
 
 #ifdef USERPROG
 struct file *thread_get_file(int fd);
+void init_parent_child(struct thread *, struct thread *);
 #endif

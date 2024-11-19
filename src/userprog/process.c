@@ -111,14 +111,42 @@ start_process (void *args_)
  * This function will be implemented in task 2.
  * For now, it does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  while (true) {
-    // Do nothing
-  }
+  
+  struct list_elem *e;
+  struct list *children = &thread_current()->children;
+  for (e = list_begin(children); e != list_end(children); e = list_next(e)) {
+    struct parent_child *child_pach = 
+        list_entry(e, struct parent_child, child_elem);
+    
+    if (child_pach->child->tid == child_tid) {
+      // child found!
 
+      /* check if child was killed by kernel. 
+      basically check if child is dead and its exit code is -1 */
+      if (child_pach->child_exit == true && child_pach->child_exit_code == -1) {
+        return -1;
+      }
+
+      // check if parent called this on the same tiD
+      if (child_pach->wait == true) {
+        return -1;
+      }
+
+      /* synchronised modification of child_pach */
+      sema_down(&child_pach->sema);
+      child_pach->wait = true;
+      sema_up(&child_pach->sema);
+
+      sema_down(&child_pach->waiting);      /* wait for child to exit*/
+      return child_pach->child_exit_code;
+    }
+  }
+  //child not found
   return -1;
 }
+
 
 /* Free the current process's resources. */
 void
@@ -126,6 +154,42 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+  
+  struct parent_child *parent_pach = cur->parent;
+  sema_down(&parent_pach->sema); 
+
+
+  //if parent has exited
+  if (parent_pach->parent_exit) {
+    //free this parent_child struct
+    free(parent_pach);
+  } else {
+    //no need to remove child from parent's children list
+    parent_pach->child_exit = true;
+
+    sema_up(&parent_pach->waiting); 
+    sema_up(&parent_pach->sema);
+  }
+
+
+
+  // Traverse the list of children, letting each child know it has exited (e.g. parent_exit = true). use the sema
+  struct list_elem *e;
+  struct list *children = &cur->children;
+
+  for (e = list_begin(children); e != list_end(children); e = list_next(e)) {
+    struct parent_child *child_pach = list_entry(e, struct parent_child, child_elem);
+    sema_down(&child_pach->sema);
+
+    if (child_pach->child_exit) {
+      free(child_pach);
+    } else {
+      child_pach->parent_exit = true;
+      //set parent exit code ???
+      //No need to up waiting 
+      sema_up(&child_pach->sema);
+    } 
+  }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
