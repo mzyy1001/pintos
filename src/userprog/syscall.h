@@ -6,6 +6,7 @@
 #include "../src/filesys/file.h"
 #include <limits.h>
 #include "threads/thread.h"
+#include "threads/synch.h"
 
 void syscall_init (void);
 

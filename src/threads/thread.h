@@ -8,6 +8,12 @@
 #include <hash.h>
 #include "devices/timer.h"
 
+#ifndef USERPROG
+   #define USERPROG
+#endif
+
+#define MAX_FILES 31
+
 extern f_point load_avg;
 
 /* States in a thread's life cycle. */
@@ -45,6 +51,20 @@ struct file_descriptor_element{
   struct file *file_pointer;
   struct hash_elem hash_elem;
 };
+
+/* Used to mediate parent-child pointers */
+struct parent_child
+{
+   const struct thread *parent;
+   const struct thread *child;
+   struct list_elem child_elem;
+   bool parent_exit;
+   bool child_exit;
+   int child_exit_code;
+   struct semaphore sema;           /* access synchronisation*/
+   bool wait;                       /* to check if wait is called twice */
+   struct semaphore waiting;
+   };
 
 /* A kernel thread or user process.
 
@@ -122,8 +142,12 @@ struct thread
   struct hash *file_descriptor_table;
   int next_free_fd;
 #ifdef USERPROG
-    /* Owned by userprog/process.c. */
-    uint32_t *pagedir;                  /* Page directory. */
+   struct file *file_descriptors[MAX_FILES];
+   /* Owned by userprog/process.c. */
+   uint32_t *pagedir;                  /* Page directory. */
+   struct list children;
+   struct parent_child *parent;
+
 #endif
 
     /* Owned by thread.c. */
@@ -177,7 +201,12 @@ void update_priority(struct thread *, void *);
 bool thread_is_idle(struct thread *);
 void thread_recent_increment(struct thread*);
 
-struct file *fd_table_get (int); 
+struct file *fd_table_get (int);
 void fd_table_close (int);
 int fd_table_add (struct file*);
 #endif /* threads/thread.h */
+
+#ifdef USERPROG
+struct file *thread_get_file(int fd);
+void init_parent_child(struct thread *, struct thread *);
+#endif

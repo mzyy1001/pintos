@@ -2,8 +2,11 @@
 #include <stdio.h>
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
+#include "threads/thread.h"
+#include "userprog/process.h"
 #include "devices/shutdown.h"
 #include "pagedir.h"
+#include "filesys/file.h"
 
 static void syscall_handler (struct intr_frame *);
 
@@ -30,7 +33,10 @@ halt (void) {
 If the process’s parent waits for it, this is what will be returned. */
 void
 exit (int status) {
-  //TODO()
+  struct thread *cur = thread_current();
+  printf("%s: exit(%d)\n", cur->name, status);
+  process_exit();
+  thread_exit();
 }
 
 /* Runs the executable whose name is given in cmd line, passing any given
@@ -49,40 +55,8 @@ executable. You must use appropriate synchronization to ensure this.
 }
 
 int
-wait (pid_t pid){
-  //TODO()
-  return -1;
-  /*
-Waits for a child process pid and retrieves the child’s exit status.
-If pid is still alive, waits until it terminates. Then, returns the status that pid passed to exit.
-If pid did not call exit(), but was terminated by the kernel (e.g. killed due to an exception),
-wait(pid) must return -1. It is perfectly legal for a parent process to wait for child processes
-that have already terminated by the time the parent calls wait, but the kernel must still
-allow the parent to retrieve its child’s exit status, or learn that the child was terminated by
-the kernel.
-wait must fail and return -1 immediately if any of the following conditions are true:
-• pid does not refer to a direct child of the calling process. pid is a direct child of the
-calling process if and only if the calling process received pid as a return value from a
-successful call to exec.
-Note that children are not inherited: if A spawns child B and B spawns child process C,
-then A cannot wait for C, even if B is dead. A call to wait(C) by process A must fail.
-Similarly, orphaned processes are not assigned to a new parent if their parent process
-exits before they do.
-• The process that calls wait has already called wait on pid. That is, a process may wait
-for any given child at most once.
-Processes may spawn any number of children, wait for them in any order, and may even exit
-without having waited for some or all of their children. Your design should consider all the
-ways in which waits can occur. All of a process’s resources, including its struct thread,
-must be freed whether its parent ever waits for it or not, and regardless of whether the child
-exits before or after its parent.
-As a special case, you must ensure that PintOS does not terminate until the initial pro-
-cess exits. The supplied PintOS code tries to do this by calling process_wait() (in
-‘userprog/process.c’) from main() (in ‘threads/init.c’).
-We strongly suggest that you implement process_wait() according to the comment at the
-top of the function and then implement the wait system call in terms of process_wait().
-Be aware that implementing this system call requires considerably more work than any of
-the others.
-*/
+wait (pid_t pid) {
+  return process_wait(pid);
 }
 
 
@@ -90,7 +64,8 @@ the others.
 whether it was successfully created. Creating a new file doesn't open it. */
 bool
 create (const char *file_name, unsigned initial_size){
-  if (initial_size > INT_MAX) {
+  /* Replace 2nd & 3rd condition with string validate function */
+  if (initial_size > INT_MAX || file == NULL || strlen(file) == 0) {
     return false;
   }
   acquire_filesys();
@@ -104,6 +79,10 @@ A file may be removed regardless of whether it is open or closed, and removing
 an open file does not close it. */
 bool
 remove (const char *file_name) {
+  /* Replace 2nd & 3rd condition with string validate function */
+  if (file == NULL || strlen(file) == 0) {
+    return false;
+  }
   acquire_filesys();
   bool remove_outcome = filesys_remove(file_name);
   release_filesys();
@@ -130,9 +109,11 @@ open (const char *file_name) {
 /* Returns the size, in bytes, of the file open as fd. -1 on no match. */
 int
 filesize (int fd) {
+  /* May need to add an fd check here too. */
   struct file *file = fd_table_get(fd);
   // TODO(May want to change this behaviour to kill the program or something)
   /* No matching file found. */
+  /* may need to add a validate fd function to ensure fd isn't 0 or 1, and that it is less than some MAX_FD. */
   if (file == NULL) {
     return -1;
   }
@@ -147,9 +128,27 @@ of bytes actually read (0 at end of file), or -1 if the file could not be read
 (excluding end of file). Fd 0 will read from keyboard.*/
 int
 read (int fd, void *buffer, unsigned size) {
-  // TODO()
-  return -1;
-  /*Fd 0 reads from the keyboard using input_getc(), which can be found in ‘src/devices/input.h’.*/
+  struct thread *cur = thread_current();
+  // Check if buffer is valid.
+  if (buffer == NULL) {
+    return -1;
+  }
+  if (fd == 0) {
+    unsigned bytes_read = 0;
+    char *buf = buffer;
+    for (unsigned i = 0; i < size; i++) {
+      buf[i] = input_getc();
+      bytes_read++;
+    }
+    return bytes_read;
+  } else if (fd > 1 && fd < MAX_FILES) {
+    struct file *file = cur->file_descriptors[fd];
+    if (file == NULL) {
+      return -1;  // Invalid file descriptor.
+    }
+    return file_read(file, buffer, size);
+  }
+  return -1;  // Invalid file descriptor.
 }
 
 /* Writes size bytes from buffer to the open file fd. Returns the number of
@@ -157,9 +156,38 @@ bytes actually written, which may be less than size if some bytes could not
 be written.*/
 int
 write (int fd, const void *buffer, unsigned size) {
-  // TODO()
-  return -1;
-  /* Writing past end-of-file would normally extend the file, but file growth is not implemented
+  // Check if buffer is NULL or size is 0.
+  if (buffer == NULL || size == 0) {
+        return 0;
+  }
+  int bytes_written = 0;
+  if (fd == 1) {
+        // If size is large, break it into chunks to avoid interleaving.
+        unsigned remaining = size;
+        const char *buf = buffer;
+        while (remaining > 300) {  // Write in chunks of 300 bytes.
+            putbuf(buf, 300);
+            buf += 300;
+            remaining -= 300;
+            bytes_written += 300;
+        }
+        if (remaining > 0) {
+            putbuf(buf, remaining);
+            bytes_written += remaining;
+        }
+    } else {
+        // Write to a regular file.
+        struct file *file = thread_get_file(fd);
+        if (file == NULL) {
+            return -1;
+        }
+        bytes_written = file_write(file, buffer, size);
+        if (bytes_written < 0) {
+            bytes_written = 0;
+        }
+    }
+  return bytes_written;
+/* Writing past end-of-file would normally extend the file, but file growth is not implemented
 by the basic file system. The expected behaviour is to write as many bytes as possible up to
 end-of-file and return the actual number written, or 0 if no bytes could be written at all.
 Fd 1 writes to the console. Your code to write to the console should write all of buffer in
@@ -172,6 +200,7 @@ may end up interleaved on the console, confusing both human readers and our grad
 expressed in bytes from the beginning of the file (0 would be the start). */
 void
 seek (int fd, unsigned position) {
+  /* May need to add an fd check here too. */
   /* Out of bounds position would overflow in type conversion. */
   if (position > INT_MAX) {
     // TODO(Figure out how to correctly handle such an error case)
@@ -193,6 +222,7 @@ seek (int fd, unsigned position) {
 expressed in bytes from the beginning of the file. */
 unsigned
 tell (int fd) {
+  /* May need to add an fd check here too. */
   // TODO(Very similar to filesize, may be refactorable to avoid duplication)
   struct file *file = fd_table_get(fd);
   // TODO(May want to change this behaviour to say kill the program or something)
@@ -211,6 +241,7 @@ closes all its open file descriptors, as if calling this function for each. */
 // TODO(Ensure this is called on all file descriptors when terminating or exiting a process)
 void
 close (int fd) {
+  /* May need to add an fd check here too. */
   acquire_filesys();
   fd_table_close(fd);
   release_filesys();
@@ -255,12 +286,12 @@ extract_arg_3(void *stack_pointer) {
 static void
 syscall_handler (struct intr_frame *f)
 {
-  printf ("system call!\n");
+  // printf ("system call!\n");
   /* Match to the right handler. */
   // TODO(MINIMISE DUPLICATION WITH HELPER FUNCTION)
   // TODO(Consider using function pointers in place of large switch statement or in combination with helper function and numb_args)
   // TODO(Ensure everything is synced as it should be)
-  if (verify(f) && verify(f->esp)) {
+  if (verify(f->esp)) {
     int *stack_pointer = f -> esp;
     switch (*stack_pointer) {
       case SYS_HALT:
@@ -270,34 +301,34 @@ syscall_handler (struct intr_frame *f)
         exit(extract_arg_1(stack_pointer));
         break;
       case SYS_EXEC:
-        exec((char *) extract_arg_1(stack_pointer));
+        f->eax = (int32_t) exec((char *) extract_arg_1(stack_pointer));
         break;
       case SYS_WAIT:
-        wait(extract_arg_1(stack_pointer));
+        f->eax = (int32_t) wait(extract_arg_1(stack_pointer));
         break;
       case SYS_CREATE:
-        create((char *) extract_arg_1(stack_pointer), (unsigned) extract_arg_2(stack_pointer));
+        f->eax = (int32_t) create((char *) extract_arg_1(stack_pointer), (unsigned) extract_arg_2(stack_pointer));
         break;
       case SYS_REMOVE:
-        remove((char *) extract_arg_1(stack_pointer));
+        f->eax = (int32_t) remove((char *) extract_arg_1(stack_pointer));
         break;
       case SYS_OPEN:
-        open((char *) extract_arg_1(stack_pointer));
+        f->eax = (int32_t) open((char *) extract_arg_1(stack_pointer));
         break;
       case SYS_FILESIZE:
-        filesize(extract_arg_1(stack_pointer));
+        f->eax = (int32_t) filesize(extract_arg_1(stack_pointer));
         break;
       case SYS_READ:
-        read(extract_arg_1(stack_pointer), (void *) extract_arg_2(stack_pointer), (unsigned) extract_arg_3(stack_pointer));
+        f->eax = (int32_t) read(extract_arg_1(stack_pointer), (void *) extract_arg_2(stack_pointer), (unsigned) extract_arg_3(stack_pointer));
         break;
       case SYS_WRITE:
-        write(extract_arg_1(stack_pointer), (void *) extract_arg_2(stack_pointer), (unsigned) extract_arg_3(stack_pointer));
+        f->eax = (int32_t) write(extract_arg_1(stack_pointer), (void *) extract_arg_2(stack_pointer), (unsigned) extract_arg_3(stack_pointer));
         break;
       case SYS_SEEK:
         seek(extract_arg_1(stack_pointer), (unsigned) extract_arg_2(stack_pointer));
         break;
       case SYS_TELL:
-        tell(extract_arg_1(stack_pointer));
+        f->eax = tell(extract_arg_1(stack_pointer));
         break;
       case SYS_CLOSE:
         close(extract_arg_1(stack_pointer));
