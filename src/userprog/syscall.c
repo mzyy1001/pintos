@@ -14,7 +14,6 @@ static void syscall_handler (struct intr_frame *);
 TODO(Should it be called with interrupts off, or will it be fine?) */
 static bool
 verify (void *vaddr) {
-  printf("verify!!!\n");
   if (vaddr != NULL && is_user_vaddr(vaddr)) {
     if (pagedir_get_page(thread_current()->pagedir, vaddr) != NULL){
       return true;
@@ -34,7 +33,6 @@ halt (void) {
 If the process’s parent waits for it, this is what will be returned. */
 void
 exit (int status) {
-  printf("exit!!!\n");
   struct thread *cur = thread_current();
   printf("%s: exit(%d)\n", cur->name, status);
   process_exit();
@@ -97,9 +95,12 @@ the others.
 /* Creates a new file called file initially initial size bytes in size. Returns
 whether it was successfully created. Creating a new file doesn't open it. */
 bool
-create (const char *file, unsigned initial_size){
-  //TODO()
-  return false;
+create (const char *file, unsigned initial_size) {
+  if (file == NULL || strlen(file) == 0) {
+    return false;
+  }
+
+  return filesys_create(file, initial_size);
 }
 
 /* Deletes the file called file. Returns whether it was successfully deleted.
@@ -107,8 +108,10 @@ A file may be removed regardless of whether it is open or closed, and removing
 an open file does not close it. */
 bool
 remove (const char *file) {
-  // TODO()
-  return false;
+  if (file == NULL || strlen(file) == 0) {
+    return false;
+  }
+  return filesys_remove(file);
 }
 
 /* Opens the file called file. Returns a nonnegative integer handle called a
@@ -117,17 +120,41 @@ file is opened more than once, whether by a single process or different
 processes, each open returns a new file descriptor. Different file descriptors
 for a single file are closed independently in separate calls to close and they
 do not share a file position. */
-int
-open (const char *file) {
-  //TODO()
+int open(const char *filename)
+{
+  struct thread *cur = thread_current();
+  struct file *file = filesys_open(filename);
+  if (file == NULL)
+  {
+    return -1; // File open failed
+  }
+
+  // Find an empty slot in the file_descriptors array
+  for (int i = 2; i < MAX_FILES; i++)
+  { // Skip 0 and 1 for stdin, stdout
+    if (cur->file_descriptors[i] == NULL)
+    {
+      cur->file_descriptors[i] = file;
+      //printf("open: Assigned FD %d for file %s\n", i, filename);
+      return i; // Return the file descriptor
+    }
+  }
+
+  file_close(file);
   return -1;
 }
 
 /* Returns the size, in bytes, of the file open as fd. */
 int
 filesize (int fd) {
-  // TODO()
-  return -1;
+  struct thread *cur = thread_current();
+
+  if (fd < 2 || fd >= MAX_FILES || cur->file_descriptors[fd] == NULL) {
+    return -1;  // Invalid file descriptor.
+  }
+
+  struct file *file = cur->file_descriptors[fd];
+  return file_length(file);
 }
 
 /* Reads size bytes from the file open as fd into buffer. Returns the number
@@ -135,9 +162,27 @@ of bytes actually read (0 at end of file), or -1 if the file could not be read
 (excluding end of file). Fd 0 will read from keyboard.*/
 int
 read (int fd, void *buffer, unsigned size) {
-  // TODO()
-  return -1;
-  /*Fd 0 reads from the keyboard using input_getc(), which can be found in ‘src/devices/input.h’.*/
+  struct thread *cur = thread_current();
+  // Check if buffer is valid.
+  if (buffer == NULL) {
+    return -1;
+  }
+  if (fd == 0) { 
+    unsigned bytes_read = 0;
+    char *buf = buffer;
+    for (unsigned i = 0; i < size; i++) {
+      buf[i] = input_getc();
+      bytes_read++;
+    }
+    return bytes_read;
+  } else if (fd > 1 && fd < MAX_FILES) {
+    struct file *file = cur->file_descriptors[fd];
+    if (file == NULL) {
+      return -1;  // Invalid file descriptor.
+    }
+    return file_read(file, buffer, size);
+  }
+  return -1;  // Invalid file descriptor.
 }
 
 /* Writes size bytes from buffer to the open file fd. Returns the number of
@@ -209,7 +254,14 @@ tell (int fd) {
 closes all its open file descriptors, as if calling this function for each. */
 void
 close (int fd) {
-  // TODO()
+  struct thread *cur = thread_current();
+
+  if (fd < 2 || fd >= MAX_FILES || cur->file_descriptors[fd] == NULL) {
+    return; 
+  }
+  struct file *file = cur->file_descriptors[fd];
+  file_close(file);
+  cur->file_descriptors[fd] = NULL;
 }
 
 void
@@ -251,7 +303,7 @@ extract_arg_3(void *stack_pointer) {
 static void
 syscall_handler (struct intr_frame *f)
 {
-  printf ("system call!\n");
+  // printf ("system call!\n");
   /* Match to the right handler. */
   // TODO(MINIMISE DUPLICATION WITH HELPER FUNCTION)
   // TODO(Consider using function pointers in place of large switch statement or in combination with helper function and numb_args)

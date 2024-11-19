@@ -11,7 +11,7 @@
    #define USERPROG
 #endif
 
-#define MAX_FILES 1
+#define MAX_FILES 31
 
 extern f_point load_avg;
 
