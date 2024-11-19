@@ -14,7 +14,6 @@ static void syscall_handler (struct intr_frame *);
 TODO(Should it be called with interrupts off, or will it be fine?) */
 static bool
 verify (void *vaddr) {
-  printf("verify!!!\n");
   if (vaddr != NULL && is_user_vaddr(vaddr)) {
     if (pagedir_get_page(thread_current()->pagedir, vaddr) != NULL){
       return true;
@@ -34,7 +33,6 @@ halt (void) {
 If the process’s parent waits for it, this is what will be returned. */
 void
 exit (int status) {
-  printf("exit!!!\n");
   struct thread *cur = thread_current();
   printf("%s: exit(%d)\n", cur->name, status);
   process_exit();
@@ -57,49 +55,20 @@ executable. You must use appropriate synchronization to ensure this.
 }
 
 int
-wait (pid_t pid){
-  //TODO()
-  return -1;
-  /*
-Waits for a child process pid and retrieves the child’s exit status.
-If pid is still alive, waits until it terminates. Then, returns the status that pid passed to exit.
-If pid did not call exit(), but was terminated by the kernel (e.g. killed due to an exception),
-wait(pid) must return -1. It is perfectly legal for a parent process to wait for child processes
-that have already terminated by the time the parent calls wait, but the kernel must still
-allow the parent to retrieve its child’s exit status, or learn that the child was terminated by
-the kernel.
-wait must fail and return -1 immediately if any of the following conditions are true:
-• pid does not refer to a direct child of the calling process. pid is a direct child of the
-calling process if and only if the calling process received pid as a return value from a
-successful call to exec.
-Note that children are not inherited: if A spawns child B and B spawns child process C,
-then A cannot wait for C, even if B is dead. A call to wait(C) by process A must fail.
-Similarly, orphaned processes are not assigned to a new parent if their parent process
-exits before they do.
-• The process that calls wait has already called wait on pid. That is, a process may wait
-for any given child at most once.
-Processes may spawn any number of children, wait for them in any order, and may even exit
-without having waited for some or all of their children. Your design should consider all the
-ways in which waits can occur. All of a process’s resources, including its struct thread,
-must be freed whether its parent ever waits for it or not, and regardless of whether the child
-exits before or after its parent.
-As a special case, you must ensure that PintOS does not terminate until the initial pro-
-cess exits. The supplied PintOS code tries to do this by calling process_wait() (in
-‘userprog/process.c’) from main() (in ‘threads/init.c’).
-We strongly suggest that you implement process_wait() according to the comment at the
-top of the function and then implement the wait system call in terms of process_wait().
-Be aware that implementing this system call requires considerably more work than any of
-the others.
-*/
+wait (pid_t pid) {
+  return process_wait(pid);
 }
 
 
 /* Creates a new file called file initially initial size bytes in size. Returns
 whether it was successfully created. Creating a new file doesn't open it. */
 bool
-create (const char *file, unsigned initial_size){
-  //TODO()
-  return false;
+create (const char *file, unsigned initial_size) {
+  if (file == NULL || strlen(file) == 0) {
+    return false;
+  }
+
+  return filesys_create(file, initial_size);
 }
 
 /* Deletes the file called file. Returns whether it was successfully deleted.
@@ -107,8 +76,10 @@ A file may be removed regardless of whether it is open or closed, and removing
 an open file does not close it. */
 bool
 remove (const char *file) {
-  // TODO()
-  return false;
+  if (file == NULL || strlen(file) == 0) {
+    return false;
+  }
+  return filesys_remove(file);
 }
 
 /* Opens the file called file. Returns a nonnegative integer handle called a
@@ -117,17 +88,41 @@ file is opened more than once, whether by a single process or different
 processes, each open returns a new file descriptor. Different file descriptors
 for a single file are closed independently in separate calls to close and they
 do not share a file position. */
-int
-open (const char *file) {
-  //TODO()
+int open(const char *filename)
+{
+  struct thread *cur = thread_current();
+  struct file *file = filesys_open(filename);
+  if (file == NULL)
+  {
+    return -1; // File open failed
+  }
+
+  // Find an empty slot in the file_descriptors array
+  for (int i = 2; i < MAX_FILES; i++)
+  { // Skip 0 and 1 for stdin, stdout
+    if (cur->file_descriptors[i] == NULL)
+    {
+      cur->file_descriptors[i] = file;
+      //printf("open: Assigned FD %d for file %s\n", i, filename);
+      return i; // Return the file descriptor
+    }
+  }
+
+  file_close(file);
   return -1;
 }
 
 /* Returns the size, in bytes, of the file open as fd. */
 int
 filesize (int fd) {
-  // TODO()
-  return -1;
+  struct thread *cur = thread_current();
+
+  if (fd < 2 || fd >= MAX_FILES || cur->file_descriptors[fd] == NULL) {
+    return -1;  // Invalid file descriptor.
+  }
+
+  struct file *file = cur->file_descriptors[fd];
+  return file_length(file);
 }
 
 /* Reads size bytes from the file open as fd into buffer. Returns the number
@@ -135,9 +130,27 @@ of bytes actually read (0 at end of file), or -1 if the file could not be read
 (excluding end of file). Fd 0 will read from keyboard.*/
 int
 read (int fd, void *buffer, unsigned size) {
-  // TODO()
-  return -1;
-  /*Fd 0 reads from the keyboard using input_getc(), which can be found in ‘src/devices/input.h’.*/
+  struct thread *cur = thread_current();
+  // Check if buffer is valid.
+  if (buffer == NULL) {
+    return -1;
+  }
+  if (fd == 0) { 
+    unsigned bytes_read = 0;
+    char *buf = buffer;
+    for (unsigned i = 0; i < size; i++) {
+      buf[i] = input_getc();
+      bytes_read++;
+    }
+    return bytes_read;
+  } else if (fd > 1 && fd < MAX_FILES) {
+    struct file *file = cur->file_descriptors[fd];
+    if (file == NULL) {
+      return -1;  // Invalid file descriptor.
+    }
+    return file_read(file, buffer, size);
+  }
+  return -1;  // Invalid file descriptor.
 }
 
 /* Writes size bytes from buffer to the open file fd. Returns the number of
@@ -209,7 +222,14 @@ tell (int fd) {
 closes all its open file descriptors, as if calling this function for each. */
 void
 close (int fd) {
-  // TODO()
+  struct thread *cur = thread_current();
+
+  if (fd < 2 || fd >= MAX_FILES || cur->file_descriptors[fd] == NULL) {
+    return; 
+  }
+  struct file *file = cur->file_descriptors[fd];
+  file_close(file);
+  cur->file_descriptors[fd] = NULL;
 }
 
 void
@@ -251,7 +271,7 @@ extract_arg_3(void *stack_pointer) {
 static void
 syscall_handler (struct intr_frame *f)
 {
-  printf ("system call!\n");
+  // printf ("system call!\n");
   /* Match to the right handler. */
   // TODO(MINIMISE DUPLICATION WITH HELPER FUNCTION)
   // TODO(Consider using function pointers in place of large switch statement or in combination with helper function and numb_args)

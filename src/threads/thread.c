@@ -13,6 +13,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 
 
 #ifdef USERPROG
@@ -85,6 +86,7 @@ static void thread_update_recent_cpu (struct thread *t, void *aux UNUSED);
 int thread_get_ready(void);
 f_point calculate_recent(f_point recent_cpu,int nice);
 int calculate_priority(f_point recent_cpu,int nice);
+void init_parent_child(struct thread *child, struct thread *parent);
 
 /*init ready*/
 void init_ready_list(void) 
@@ -288,6 +290,10 @@ thread_create (const char *name, int priority,
   sf->eip = switch_entry;
   sf->ebp = 0;
 
+  /* initialises the parent_child struct, including pointers 
+   from parent and child threads */
+  init_parent_child(t, thread_current());
+
   intr_set_level (old_level);
 
   /* Add to run queue. */
@@ -295,6 +301,25 @@ thread_create (const char *name, int priority,
 
   return tid;
 }
+
+/* Initialises parent_child struct */
+void init_parent_child(struct thread *child, struct thread *parent) {
+  struct parent_child *parent_child = malloc (sizeof(struct parent_child));
+  parent_child->parent = parent;
+  parent_child->child = child;
+  parent_child->parent_exit = false;
+  parent_child->child_exit = false;
+  parent_child->child_exit_code = -1; /* initialised to -1. exit syscall will modify it*/
+  parent_child->wait = false;         /* will become true if parent waits on child*/
+  sema_init(&parent_child->sema, 1);
+  parent_child->wait = false;
+  sema_init(&parent_child->waiting, 0);
+
+  /* pointers from threads to parent_child */
+  list_push_front(&parent->children, &parent_child->child_elem);
+  child->parent = parent_child;
+}
+
 
 /* Puts the current thread to sleep.  It will not be scheduled
    again until awoken by thread_unblock().
@@ -747,7 +772,8 @@ init_thread (struct thread *t, const char *name, int priority)
   /* Initialize the locks list */
   list_init(&t->locks);
 
-
+  list_init(&t->children);
+  
   t->magic = THREAD_MAGIC;
   
   old_level = intr_disable ();
