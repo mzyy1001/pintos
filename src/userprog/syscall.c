@@ -22,6 +22,15 @@ verify (void *vaddr) {
   return false;
 }
 
+/* Used to ensure safe memory access by verifying a string.*/
+static bool
+verify_string (char *target_string) {
+  if (target_string == NULL || *target_string == '\0') {
+    return false;
+  }
+  return true;
+}
+
 /* Terminates PintOS. This should be seldom used, because you lose some
 information about possible deadlock situations, etc. */
 void
@@ -33,9 +42,7 @@ halt (void) {
 If the process’s parent waits for it, this is what will be returned. */
 void
 exit (int status) {
-  struct thread *cur = thread_current();
-  printf("%s: exit(%d)\n", cur->name, status);
-  process_exit();
+  thread_current()->exit_status = status;
   thread_exit();
 }
 
@@ -65,8 +72,8 @@ whether it was successfully created. Creating a new file doesn't open it. */
 bool
 create (const char *file_name, unsigned initial_size){
   /* Replace 2nd & 3rd condition with string validate function */
-  if (initial_size > INT_MAX || file == NULL || strlen(file) == 0) {
-    return false;
+  if (initial_size > INT_MAX || !verify(file_name) || initial_size == 0) {
+    exit(-1);
   }
   acquire_filesys();
   bool creation_outcome = filesys_create(file_name, (off_t) initial_size);
@@ -80,7 +87,7 @@ an open file does not close it. */
 bool
 remove (const char *file_name) {
   /* Replace 2nd & 3rd condition with string validate function */
-  if (file == NULL || strlen(file) == 0) {
+  if (!verify(file_name) || *file_name == '\0') {
     return false;
   }
   acquire_filesys();
@@ -97,6 +104,13 @@ for a single file are closed independently in separate calls to close and they
 do not share a file position. */
 int
 open (const char *file_name) {
+  /* Replace condition with string validate function */
+  if (!verify(file_name)) {
+    exit(-1);
+  }
+  if (*file_name == '\0') {
+   return -1;
+  }
   acquire_filesys();
   struct file *file = filesys_open(file_name);
   release_filesys();
@@ -128,11 +142,11 @@ of bytes actually read (0 at end of file), or -1 if the file could not be read
 (excluding end of file). Fd 0 will read from keyboard.*/
 int
 read (int fd, void *buffer, unsigned size) {
-  struct thread *cur = thread_current();
   // Check if buffer is valid.
   if (buffer == NULL) {
     return -1;
   }
+  /* TODO(May need to have mutex acquiring in fd 0 reading. */
   if (fd == 0) {
     unsigned bytes_read = 0;
     char *buf = buffer;
@@ -142,11 +156,14 @@ read (int fd, void *buffer, unsigned size) {
     }
     return bytes_read;
   } else if (fd > 1 && fd < MAX_FILES) {
-    struct file *file = cur->file_descriptors[fd];
+    struct file *file = fd_table_get(fd);
     if (file == NULL) {
       return -1;  // Invalid file descriptor.
     }
-    return file_read(file, buffer, size);
+    acquire_filesys();
+    off_t file_red = file_read(file, buffer, size);
+    release_filesys();
+    return file_red;
   }
   return -1;  // Invalid file descriptor.
 }
@@ -157,35 +174,38 @@ be written.*/
 int
 write (int fd, const void *buffer, unsigned size) {
   // Check if buffer is NULL or size is 0.
-  if (buffer == NULL || size == 0) {
+  if (buffer == NULL || !verify(buffer) || size == 0) {
         return 0;
   }
+  /* TODO(May need to have mutex acquiring in fd 1 writing. */
   int bytes_written = 0;
   if (fd == 1) {
-        // If size is large, break it into chunks to avoid interleaving.
-        unsigned remaining = size;
-        const char *buf = buffer;
-        while (remaining > 300) {  // Write in chunks of 300 bytes.
-            putbuf(buf, 300);
-            buf += 300;
-            remaining -= 300;
-            bytes_written += 300;
-        }
-        if (remaining > 0) {
-            putbuf(buf, remaining);
-            bytes_written += remaining;
-        }
-    } else {
-        // Write to a regular file.
-        struct file *file = thread_get_file(fd);
-        if (file == NULL) {
-            return -1;
-        }
-        bytes_written = file_write(file, buffer, size);
-        if (bytes_written < 0) {
-            bytes_written = 0;
-        }
+    // If size is large, break it into chunks to avoid interleaving.
+    unsigned remaining = size;
+    const char *buf = buffer;
+    while (remaining > 300) {  // Write in chunks of 300 bytes.
+        putbuf(buf, 300);
+        buf += 300;
+        remaining -= 300;
+        bytes_written += 300;
     }
+    if (remaining > 0) {
+        putbuf(buf, remaining);
+        bytes_written += remaining;
+    }
+  } else {
+    // Write to a regular file.
+    struct file *file = fd_table_get(fd);
+    if (file == NULL) {
+      return -1;
+    }
+    acquire_filesys();
+    bytes_written = file_write(file, buffer, size);
+    release_filesys();
+    if (bytes_written < 0) {
+      bytes_written = 0;
+    }
+  }
   return bytes_written;
 /* Writing past end-of-file would normally extend the file, but file growth is not implemented
 by the basic file system. The expected behaviour is to write as many bytes as possible up to
@@ -335,7 +355,7 @@ syscall_handler (struct intr_frame *f)
         break;
       default:
         //TODO(FIGURE OUT HOW TO MORE CORRECTLY HANDLE INVALID CODE)
-        thread_exit ();
+        exit (-1);
     }
   }
   /* Invalid pointer terminates user process. */

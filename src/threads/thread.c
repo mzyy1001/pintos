@@ -236,6 +236,24 @@ thread_print_stats (void)
           idle_ticks, kernel_ticks, user_ticks);
 }
 
+/* Returns the hash of the file_descriptor_element. */
+// TODO(May want to change the implementation)
+static unsigned
+fd_elem_hash (const struct hash_elem *a, void *aux UNUSED)
+{
+  struct file_descriptor_element *fd_elem_a = hash_entry (a, struct file_descriptor_element, hash_elem);
+  return hash_int (fd_elem_a->fd);
+}
+
+/* Compares 2 file descriptor elements using their fds. */
+static bool
+fd_elem_less(const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED) {
+  struct file_descriptor_element *fd_elem_a = hash_entry(a, struct file_descriptor_element, hash_elem);
+  struct file_descriptor_element *fd_elem_b = hash_entry(b, struct file_descriptor_element, hash_elem);
+  return (fd_elem_a->fd > fd_elem_b->fd);
+}
+
+
 /* Creates a new kernel thread named NAME with the given initial
    PRIORITY, which executes FUNCTION passing AUX as the argument,
    and adds it to the ready queue.  Returns the thread identifier
@@ -296,6 +314,10 @@ tid_t
   /* initialises the parent_child struct, including pointers 
    from parent and child threads */
   init_parent_child(t, thread_current());
+
+  #ifdef USERPROG
+  hash_init(&(t->file_descriptor_table), &fd_elem_hash, &fd_elem_less, NULL);
+  #endif
 
   intr_set_level (old_level);
 
@@ -411,7 +433,7 @@ thread_exit (void)
 
 #ifdef USERPROG
   process_exit ();
-  hash_destroy (thread_current()->file_descriptor_table, &fd_hash_elem_free);
+  hash_destroy (&(thread_current()->file_descriptor_table), &fd_hash_elem_free);
 #endif
 
   /* Remove thread from all threads list, set our status to dying,
@@ -705,17 +727,24 @@ fd_table_add (struct file* file) {
   /* Unable to allocate memory, operation fails. */
   // TODO(Consider terminating the process in such a case)
   if (new_fd == NULL) {
+    acquire_filesys();
+    file_close(file);
+    release_filesys();
     return -1;
   }
   new_fd->fd = thread_get_fd();
   new_fd->file_pointer = file;
-  struct hash *hash_table = thread_current()->file_descriptor_table;
+  struct hash *hash_table = &(thread_current()->file_descriptor_table);
   struct hash_elem *added_elem = hash_insert(hash_table, &(new_fd->hash_elem));
   // TODO(May want to change implementation if added_elem is NULL e.g. to kill the program)
   /* Equivilent element already in table. Should never occur as thread_get_fd 
   is strictly monotone increasing and int limit is very large. */
-  if (added_elem == NULL) {
+  if (added_elem != NULL) {
+    acquire_filesys();
+    file_close(file);
+    release_filesys();
     free (new_fd);
+    return -1;
   }
   return new_fd->fd;
 }
@@ -724,7 +753,7 @@ fd_table_add (struct file* file) {
   Still returns result on a failed match, which propagates through the NULL. */
 struct file *
 fd_table_get (int fd) {
-  struct hash *hash_table = thread_current()->file_descriptor_table;
+  struct hash *hash_table = &(thread_current()->file_descriptor_table);
   struct file_descriptor_element temp_elem;
   temp_elem.fd = fd;
   struct hash_elem *result = hash_find(hash_table, &(temp_elem.hash_elem));
@@ -740,7 +769,7 @@ fd_table_get (int fd) {
 // this would allow for a different response to no matching result e.g. killing the proccess)
 void
 fd_table_close (int fd) {
-  struct hash *hash_table = thread_current()->file_descriptor_table;
+  struct hash *hash_table = &(thread_current()->file_descriptor_table);
   struct file_descriptor_element temp_elem;
   temp_elem.fd = fd;
   struct hash_elem *result = hash_delete(hash_table, &(temp_elem.hash_elem));
@@ -748,6 +777,7 @@ fd_table_close (int fd) {
   if (result == NULL) {
     return;
   }
+  file_close(hash_entry (result, struct file_descriptor_element, hash_elem)->file_pointer);
   fd_hash_elem_free (result, NULL);
 }
 
@@ -820,23 +850,6 @@ is_thread (struct thread *t)
   return t != NULL && t->magic == THREAD_MAGIC;
 }
 
-/* Returns the hash of the file_descriptor_element. */
-// TODO(May want to change the implementation)
-static unsigned
-fd_elem_hash (const struct hash_elem *a, void *aux UNUSED)
-{
-  struct file_descriptor_element *fd_elem_a = hash_entry (a, struct file_descriptor_element, hash_elem);
-  return hash_int (fd_elem_a->fd);
-}
-
-/* Compares 2 file descriptor elements using their fds. */
-static bool
-fd_elem_less(const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED) {
-  struct file_descriptor_element *fd_elem_a = hash_entry(a, struct file_descriptor_element, hash_elem);
-  struct file_descriptor_element *fd_elem_b = hash_entry(b, struct file_descriptor_element, hash_elem);
-  return (fd_elem_a->fd > fd_elem_b->fd);
-}
-
 /* Does basic initialization of T as a blocked thread named
    NAME. */
 static void
@@ -857,8 +870,8 @@ init_thread (struct thread *t, const char *name, int priority)
     t->nice = 0;
   }
   #ifdef USERPROG
-    hash_init(t->file_descriptor_table, &fd_elem_hash, &fd_elem_less, NULL);
     t->next_free_fd = FD_START_VALUE;
+    t->exit_status = -1;
   #endif
   
   t->status = THREAD_BLOCKED;
@@ -1032,13 +1045,3 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
-#ifdef USERPROG
-/*return the file the thread needs to be write in*/
-struct file *thread_get_file(int fd) {
-    struct thread *cur = thread_current();
-    if (fd < 0 || fd >= MAX_FILES) {
-        return NULL;  // Invalid file descriptor.
-    }
-    return cur->file_descriptors[fd];
-}
-#endif

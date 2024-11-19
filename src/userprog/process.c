@@ -36,8 +36,10 @@ process_execute (const char *arguments)
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   args_copy  = palloc_get_page (0);
-  if (args_copy  == NULL)
+  if (args_copy  == NULL){
     return TID_ERROR;
+  }
+
   strlcpy (args_copy , arguments, PGSIZE);
 
   /* Parse the file name*/
@@ -50,8 +52,9 @@ process_execute (const char *arguments)
   strlcpy (args_copy , arguments, PGSIZE);
   /* Create a new thread to execute program. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, args_copy );
-  if (tid == TID_ERROR)
-    palloc_free_page (args_copy ); 
+  if (tid == TID_ERROR) {
+    palloc_free_page(args_copy);
+  }
   return tid;
 }
 
@@ -154,7 +157,8 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
-  
+
+  printf("%s: exit(%d)\n", cur->name, cur->exit_status);
   struct parent_child *parent_pach = cur->parent;
   sema_down(&parent_pach->sema); 
 
@@ -298,7 +302,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
    and its initial stack pointer into *ESP.
    Returns true if successful, false otherwise. */
 bool
-load (const char *file_name, void (**eip) (void), void **esp) 
+load (const char *file_name, void (**eip) (void), void **esp)
 {
   struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;

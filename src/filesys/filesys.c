@@ -19,7 +19,7 @@ acquire_filesys() {
 
 void
 release_filesys() {
-  sema_down(&filesys_mutex);
+  sema_up(&filesys_mutex);
 }
 
 /* Partition that contains the file system. */

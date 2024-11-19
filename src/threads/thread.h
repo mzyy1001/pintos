@@ -7,7 +7,7 @@
 #include <float.h>
 #include <hash.h>
 #include "devices/timer.h"
-
+#include "./filesys/filesys.h"
 #ifndef USERPROG
    #define USERPROG
 #endif
@@ -139,11 +139,11 @@ struct thread
    struct list_elem bfs_elem;          /* List element for BFS in calc_thread_priority() */
    struct list locks;                  /* List of locks that thread has acquired */
 
-  struct hash *file_descriptor_table;
+  struct hash file_descriptor_table;
   int next_free_fd;
 #ifdef USERPROG
-   struct file *file_descriptors[MAX_FILES];
    /* Owned by userprog/process.c. */
+   int exit_status;                           /* Niceness */
    uint32_t *pagedir;                  /* Page directory. */
    struct list children;
    struct parent_child *parent;
@@ -207,6 +207,5 @@ int fd_table_add (struct file*);
 #endif /* threads/thread.h */
 
 #ifdef USERPROG
-struct file *thread_get_file(int fd);
 void init_parent_child(struct thread *, struct thread *);
 #endif
