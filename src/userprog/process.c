@@ -72,8 +72,10 @@ start_process (void *args_)
   char *args = args_;
   struct intr_frame if_;
   bool success;
-
-  char *file_name = thread_current()->name;
+  struct thread *cur = thread_current();
+  char *file_name = cur->name;
+  cur->load_success = false;
+  sema_init(&cur->load_sema, 0);
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
@@ -83,6 +85,8 @@ start_process (void *args_)
   /* If load failed, quit. */
   //
   palloc_free_page(args);
+  cur->load_success = success; // Update the load success flag
+  sema_up(&cur->load_sema);    // Signal the parent that loading is complete
   if (!success)
   {
     thread_exit ();

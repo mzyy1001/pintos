@@ -147,6 +147,8 @@ struct thread
    uint32_t *pagedir;                  /* Page directory. */
    struct list children;
    struct parent_child *parent;
+   struct semaphore load_sema;
+   bool load_success;          // store load status
 
 #endif
 
@@ -208,4 +210,5 @@ int fd_table_add (struct file*);
 
 #ifdef USERPROG
 void init_parent_child(struct thread *, struct thread *);
+struct thread * get_thread_by_tid(tid_t tid);
 #endif

@@ -49,16 +49,44 @@ exit (int status) {
 /* Runs the executable whose name is given in cmd line, passing any given
 arguments, and returns the new process’s program id (pid). */
 pid_t
-exec (const char *cmd_line ) {
-//TODO()
-  return -1;
+exec(const char *cmd_line)
+{
+    if (cmd_line == NULL) {
+        return -1; // Invalid command line
+    }
 
-/* Runs the executable whose name is given in cmd line, passing any given arguments, and
-returns the new process’s program id (pid). Must return pid -1, which otherwise should not
-be a valid pid, if the program cannot load or run for any reason. Thus, the parent process
-cannot return from the exec until it knows whether the child process successfully loaded its
-executable. You must use appropriate synchronization to ensure this.
-*/
+    /* Make a copy of the command line. */
+    char *cmd_copy = palloc_get_page(0);
+    if (cmd_copy == NULL) {
+        return -1;
+    }
+    strlcpy(cmd_copy, cmd_line, PGSIZE);
+
+    /* Create the new process. */
+    tid_t tid = process_execute(cmd_copy);
+    if (tid == TID_ERROR) {
+        palloc_free_page(cmd_copy);
+        return -1;
+    }
+
+    /* Find the corresponding child thread structure. */
+    struct thread *child = get_thread_by_tid(tid);
+    if (child == NULL) {
+        palloc_free_page(cmd_copy);
+        return -1;
+    }
+
+    /* Synchronize with the child process. */
+    sema_down(&child->load_sema); 
+
+    /* Check if the child process loaded successfully. */
+    if (!child->load_success) {
+        tid = -1;
+    }
+
+    /* Clean up the command line copy. */
+    palloc_free_page(cmd_copy);
+    return tid;
 }
 
 int
