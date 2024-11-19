@@ -5,9 +5,8 @@
 #include <list.h>
 #include <stdint.h>
 #include <float.h>
-#include <hash.h>
 #include "devices/timer.h"
-#include "./filesys/filesys.h"
+
 #ifndef USERPROG
    #define USERPROG
 #endif
@@ -45,15 +44,8 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
-/* An entry into the file descriptor table. */
-struct file_descriptor_element{
-  int fd;
-  struct file *file_pointer;
-  struct hash_elem hash_elem;
-};
-
 /* Used to mediate parent-child pointers */
-struct parent_child
+struct parent_child 
 {
    const struct thread *parent;
    const struct thread *child;
@@ -133,17 +125,15 @@ struct thread
    int nice;                           /* Niceness */
    f_point recent_cpu;                 /* Recent CPU */
    struct list_elem allelem;           /* List element for all threads list. */
-
+   
    /* Shared between thread.c and synch.c. */
    struct list_elem elem;              /* List element. */
    struct list_elem bfs_elem;          /* List element for BFS in calc_thread_priority() */
    struct list locks;                  /* List of locks that thread has acquired */
 
-  struct hash file_descriptor_table;
-  int next_free_fd;
 #ifdef USERPROG
+   struct file *file_descriptors[MAX_FILES];
    /* Owned by userprog/process.c. */
-   int exit_status;                           /* Niceness */
    uint32_t *pagedir;                  /* Page directory. */
    struct list children;
    struct parent_child *parent;
@@ -201,11 +191,9 @@ void update_priority(struct thread *, void *);
 bool thread_is_idle(struct thread *);
 void thread_recent_increment(struct thread*);
 
-struct file *fd_table_get (int);
-void fd_table_close (int);
-int fd_table_add (struct file*);
 #endif /* threads/thread.h */
 
 #ifdef USERPROG
+struct file *thread_get_file(int fd);
 void init_parent_child(struct thread *, struct thread *);
 #endif
