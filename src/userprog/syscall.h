@@ -2,8 +2,11 @@
 #define USERPROG_SYSCALL_H
 #include "../src/lib/user/syscall.h"
 #include "../src/threads/vaddr.h"
-#include "threads/synch.h"
+#include "../src/filesys/filesys.h"
+#include "../src/filesys/file.h"
+#include <limits.h>
 #include "threads/thread.h"
+#include "threads/synch.h"
 
 void syscall_init (void);
 
