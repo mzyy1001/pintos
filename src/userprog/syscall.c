@@ -142,9 +142,9 @@ of bytes actually read (0 at end of file), or -1 if the file could not be read
 (excluding end of file). Fd 0 will read from keyboard.*/
 int
 read (int fd, void *buffer, unsigned size) {
-  // Check if buffer is valid.
-  if (buffer == NULL) {
-    return -1;
+  /* Check if buffer is valid. */
+  if (!verify(buffer)) {
+    exit(-1);
   }
   /* TODO(May need to have mutex acquiring in fd 0 reading. */
   if (fd == 0) {
@@ -173,10 +173,15 @@ bytes actually written, which may be less than size if some bytes could not
 be written.*/
 int
 write (int fd, const void *buffer, unsigned size) {
-  // Check if buffer is NULL or size is 0.
-  if (buffer == NULL || !verify(buffer) || size == 0) {
-        return 0;
+  /* Check if buffer is invalid. */
+  if (!verify(buffer)) {
+        exit(-1);
   }
+  /* Check size exits, may be unnecessary. */
+  if (size == 0) {
+    return 0;
+  }
+
   /* TODO(May need to have mutex acquiring in fd 1 writing. */
   int bytes_written = 0;
   if (fd == 1) {
