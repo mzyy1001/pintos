@@ -10,6 +10,12 @@
 
 #define NUMBER_OF_SYSCALLS 13
 
+/* Exit code when given bad (invalid or out of range) arguments. */
+#define BAD_ARGUMENTS (-1)
+
+/* Syscall exit code when an operation with the fd table errors. */
+#define FD_TABLE_ERROR (-1)
+
 /* Process identifier. */
 typedef int pid_t;
 
@@ -103,12 +109,11 @@ create (struct intr_frame *f) {
   unsigned initial_size = (unsigned) extract_arg_2 ((int *) f->esp);
   /* Replace 2nd & 3rd condition with string validate function */
   if (initial_size > INT_MAX || !verify(file_name)) {
-    exit(-1);
+    exit(BAD_ARGUMENTS);
   }
   acquire_filesys();
   f->eax = (int32_t) filesys_create(file_name, (off_t) initial_size);
   release_filesys();
-  return creation_outcome;
 }
 
 /* Deletes the file called file. Returns whether it was successfully deleted.
@@ -138,10 +143,10 @@ open (struct intr_frame *f) {
   const char *file_name = (char *) extract_arg_1((int *) f->esp);
   /* Replace condition with string validate function */
   if (!verify(file_name)) {
-    exit(-1);
+    exit(BAD_ARGUMENTS);
   }
   if (*file_name == '\0') {
-    f->eax = (int32_t) -1;
+    f->eax = (int32_t) BAD_ARGUMENTS;
     return;
   }
   acquire_filesys();
@@ -164,7 +169,7 @@ filesize (struct intr_frame *f) {
   /* No matching file found. */
   /* may need to add a validate fd function to ensure fd isn't 0 or 1, and that it is less than some MAX_FD. */
   if (file == NULL) {
-    f->eax = (int32_t) -1;
+    f->eax = (int32_t) FD_TABLE_ERROR;
     return;
   }
   acquire_filesys();
@@ -178,11 +183,11 @@ of bytes actually read (0 at end of file), or -1 if the file could not be read
 static void
 read (struct intr_frame *f) {
   int fd = extract_arg_1((int *) f->esp);
-  const void *buffer = (void *) extract_arg_2((int *) f->esp);
+  void *buffer = (void *) extract_arg_2((int *) f->esp);
   unsigned size = (unsigned) extract_arg_3 ((int *) f->esp);
   /* Check if buffer is valid. */
   if (!verify(buffer)) {
-    exit(-1);
+    exit(BAD_ARGUMENTS);
   }
   /* TODO(May need to have mutex acquiring in fd 0 reading. */
   if (fd == 0) {
@@ -196,9 +201,9 @@ read (struct intr_frame *f) {
     return;
   } else if (fd > 1 && fd < MAX_FILES) {
     struct file *file = fd_table_get(fd);
-    /* Unregistered file descriptor. */
+    /* FD table fails on file descriptor. */
     if (file == NULL) {
-      f->eax = (int32_t) -1;
+      f->eax = (int32_t) FD_TABLE_ERROR;
       return;
     }
     acquire_filesys();
@@ -207,7 +212,7 @@ read (struct intr_frame *f) {
     return;
   }
   /* Invalid file descriptor. */
-  f->eax = (int32_t) -1;
+  f->eax = (int32_t) BAD_ARGUMENTS;
 }
 
 /* Writes size bytes from buffer to the open file fd. Returns the number of
@@ -220,7 +225,7 @@ write (struct intr_frame *f) {
   unsigned size = (unsigned) extract_arg_3 ((int *) f->esp);
   /* Check if buffer is invalid. */
   if (!verify(buffer)) {
-    exit(-1);
+    exit(BAD_ARGUMENTS);
   }
   /* Check size exits, may be unnecessary. */
   if (size == 0) {
@@ -245,10 +250,11 @@ write (struct intr_frame *f) {
         bytes_written += remaining;
     }
   } else {
-    // Write to a regular file.
+    /* Write to a regular file. */
     struct file *file = fd_table_get(fd);
+    /* FD table fails on file descriptor. */
     if (file == NULL) {
-      f->eax = (int32_t) -1;
+      f->eax = (int32_t) FD_TABLE_ERROR;
       return;
     }
     acquire_filesys();
@@ -297,13 +303,13 @@ expressed in bytes from the beginning of the file. */
 static void
 tell (struct intr_frame *f) {
   int fd = extract_arg_1((int *) f->esp);
-  /* May need to add an fd check here too. */
+  /* May need to add a fd check here too. */
   // TODO(Very similar to filesize, may be refactorable to avoid duplication)
   struct file *file = fd_table_get(fd);
   // TODO(May want to change this behaviour to say kill the program or something)
   /* No matching file found. */
   if (file == NULL) {
-    f->eax = (int32_t) -1;
+    f->eax = (int32_t) FD_TABLE_ERROR;
     return;
   }
   acquire_filesys();
@@ -317,7 +323,7 @@ closes all its open file descriptors, as if calling this function for each. */
 static void
 close (struct intr_frame *f) {
   int fd = extract_arg_1((int *) f->esp);
-  /* May need to add an fd check here too. */
+  /* May need to add a fd check here too. */
   acquire_filesys();
   fd_table_close(fd);
   release_filesys();
@@ -343,13 +349,9 @@ syscall_handler (struct intr_frame *f)
     int *stack_pointer = f -> esp;
     if (*stack_pointer < NUMBER_OF_SYSCALLS) {
       syscalls[*stack_pointer](f);
-    }
-    else {
-      exit (-1);
-    }
+      return;
+    }Z
   }
   /* Invalid pointer terminates user process. */
-  else {
-    thread_exit ();
-  }
+  exit (BAD_ARGUMENTS);
 }
