@@ -22,6 +22,13 @@
 static thread_func start_process NO_RETURN;
 static bool load (void *args_, const char *cmdline, void (**eip) (void), void **esp);
 static bool setup_stack (void **esp, void *args_, char *file_name);
+#define CHECK_STACK_OVERFLOW(esp) \
+  do { \
+    if ((esp) < (uint8_t *)PHYS_BASE - PGSIZE) { \
+      success = false; \
+      goto done; \
+    } \
+  } while (0)
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -566,6 +573,7 @@ setup_stack (void **esp, void *args_, char *file_name)
       while (arg != NULL)
       {
         *esp -= strlen(arg) + 1;
+        CHECK_STACK_OVERFLOW(*esp);
         memcpy(*esp, arg, strlen(arg) + 1);
         argv[argc++] = *esp;
         arg = strtok_r(NULL, " ", &save_ptr);
@@ -575,6 +583,7 @@ setup_stack (void **esp, void *args_, char *file_name)
       if (align)
       {
         *esp -= align;
+        CHECK_STACK_OVERFLOW(*esp);
         memset(*esp, 0, align);
       }
       // Push argument addresses
@@ -582,23 +591,32 @@ setup_stack (void **esp, void *args_, char *file_name)
       for (int i = argc; i >= 0; i--)
       {
         *esp -= sizeof(char *);
+        CHECK_STACK_OVERFLOW(*esp);
         memcpy(*esp, &argv[i], sizeof(char *));
       }
       // Push argv and argc
       char **argv_ptr = *esp;
       *esp -= sizeof(char **);
+      CHECK_STACK_OVERFLOW(*esp);
       memcpy(*esp, &argv_ptr, sizeof(char **));
       *esp -= sizeof(int);
+      CHECK_STACK_OVERFLOW(*esp);
       *(int *)*esp = argc;
 
       // Push a fake return address
       *esp -= sizeof(void *);
+      CHECK_STACK_OVERFLOW(*esp);
       *(void **)*esp = 0;
     }
     else
     {
       palloc_free_page(kpage);
     }
+  }
+  done:
+  if (!success && kpage != NULL)
+  {
+    palloc_free_page(kpage);
   }
   return success;
 }
