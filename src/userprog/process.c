@@ -447,12 +447,17 @@ load (void *args_, const char *file_name, void (**eip) (void), void **esp)
   }
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
-
   success = true;
 
   done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  if (!success && file != NULL)
+  {
+    /* Revert deny-write if load fails. */
+    file_allow_write(file);
+    file_close(file);
+    t->executable_file = NULL;
+  }
   return success;
 }
 
