@@ -342,6 +342,8 @@ void init_parent_child(struct thread *child, struct thread *parent) {
   /* pointers from threads to parent_child */
   list_push_front(&parent->children, &parent_child->child_elem);
   child->parent = parent_child;
+
+  sema_init(&parent_child->child_loaded, 0);
 }
 
 

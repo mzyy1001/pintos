@@ -63,7 +63,9 @@ struct parent_child
    int child_exit_code;
    struct semaphore sema;           /* access synchronisation*/
    bool wait;                       /* to check if wait is called twice */
-   struct semaphore waiting;        /* so child can signal to parent it has exited*/
+   struct semaphore waiting;        /* to signal to parent child has exited*/
+   bool child_load_success;
+   struct semaphore child_loaded;   /* to signal to parent child has loaded (successfully or not)*/
    };
 
 /* A kernel thread or user process.
@@ -146,9 +148,6 @@ struct thread
    uint32_t *pagedir;                  /* Page directory. */
    struct list children;
    struct parent_child *parent;
-   struct semaphore load_sema;
-   bool load_success;          // store load status
-
 #endif
 
     /* Owned by thread.c. */

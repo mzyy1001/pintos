@@ -23,6 +23,8 @@
 static thread_func start_process NO_RETURN;
 static bool load (void *args_, const char *cmdline, void (**eip) (void), void **esp);
 static bool setup_stack (void **esp, void *args_, char *file_name);
+struct parent_child *get_child_pach(tid_t child_tid);
+
 #define CHECK_STACK_OVERFLOW(esp) \
   do { \
     if ((esp) < (uint8_t *)PHYS_BASE - PGSIZE) { \
@@ -30,6 +32,7 @@ static bool setup_stack (void **esp, void *args_, char *file_name);
       goto done; \
     } \
   } while (0)
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -82,19 +85,23 @@ start_process (void *args_)
   bool success;
   struct thread *cur = thread_current();
   char *file_name = cur->name;
-  cur->load_success = false;
-  sema_init(&cur->load_sema, 0);
+
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (args_,file_name, &if_.eip, &if_.esp);
-  /* If load failed, quit. */
-  //
   palloc_free_page(args);
-  cur->load_success = success; // Update the load success flag
-  sema_up(&cur->load_sema);    // Signal the parent that loading is complete
+
+  /* Signal to parent load success/failure */
+  struct parent_child *parent_pach = cur->parent;
+  sema_down(&parent_pach->sema);
+  parent_pach->child_load_success = success;
+  sema_up(&parent_pach->sema);
+  sema_up(&parent_pach->child_loaded);    
+
+  /* If load failed, quit. */
   if (!success)
   {
     thread_exit ();
@@ -119,6 +126,24 @@ start_process (void *args_)
   NOT_REACHED ();
 }
 
+/* Returns the intermediary structure (parent_child) of the parent's child with 
+  child_tid. 
+  The actual child thread * can be accessed by get_child_pach(child_tid)->child*/
+struct parent_child *get_child_pach(tid_t child_tid) {
+  struct list_elem *e;
+  struct parent_child *child_pach = NULL;
+  struct list *children = &thread_current()->children;
+  for (e = list_begin(children); e != list_end(children); e = list_next(e)) {
+    child_pach = list_entry(e, struct parent_child, child_elem);
+
+    if (child_pach->child->tid == child_tid) {
+      //child found!
+      break;
+    }
+  }
+  return child_pach;
+}
+
 /* Waits for thread TID to die and returns its exit status.
  * If it was terminated by the kernel (i.e. killed due to an exception),
  * returns -1.
@@ -132,37 +157,30 @@ int
 process_wait (tid_t child_tid)
 {
 
-  struct list_elem *e;
-  struct list *children = &thread_current()->children;
-  for (e = list_begin(children); e != list_end(children); e = list_next(e)) {
-    struct parent_child *child_pach =
-    list_entry(e, struct parent_child, child_elem);
+  struct parent_child *child_pach = get_child_pach(child_tid);
 
-    if (child_pach->child->tid == child_tid) {
-      // child found!
-
-      /* check if parent called this on the same tiD
-         if it did, it would have waited for child to up the waiting semaphore
-         by then the child has already set child_exit to true
-      */
-      if (child_pach->child_exit == true) {
-        return -1;
-      }
-
-      /* synchronised modification of child_pach */
-      sema_down(&child_pach->sema);
-      child_pach->wait = true;
-      sema_up(&child_pach->sema);
-
-      sema_down(&child_pach->waiting);      /* wait for child to exit*/
-
-      // here we know that the child is dead and has provided the exit code
-      // see process_exit
-      return child_pach->child_exit_code;
-    }
+  /* child_tid doesn't correspond to any of this thread's children*/
+  if (child_pach == NULL) {
+    return -1;
   }
-  //child not found
-  return -1;
+
+  /* check if parent called this on the same tiD
+    if it did, it would have waited for child to up the waiting semaphore
+    by then the child has already set child_exit to true */
+  if (child_pach->child_exit == true) {
+    return -1;
+  }
+
+  /* synchronised modification of child_pach */
+  sema_down(&child_pach->sema);
+  child_pach->wait = true;
+  sema_up(&child_pach->sema);
+
+  sema_down(&child_pach->waiting);      /* wait for child to exit*/
+
+  // here we know that the child is dead and has provided the exit code
+  // see process_exit
+  return child_pach->child_exit_code;
 }
 
 

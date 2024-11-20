@@ -74,18 +74,19 @@ exec(const char *cmd_line)
         return -1;
     }
 
-    /* Find the corresponding child thread structure. */
-    struct thread *child = get_thread_by_tid(tid);
-    if (child == NULL) {
+    /* Find the corresponding intermediary (parent_child) structure corresponding to 
+      a child's tid. */
+    struct parent_child *child_pach = get_child_pach(tid);
+    if (child_pach == NULL) {
         palloc_free_page(cmd_copy);
         return -1;
     }
 
-    /* Synchronize with the child process. */
-    sema_down(&child->load_sema); 
+    /* Wait for the child to finish loading (succesfully or not). */
+    sema_down(&child_pach->child_loaded); 
 
     /* Check if the child process loaded successfully. */
-    if (!child->load_success) {
+    if (!child_pach->child_load_success) {
         tid = -1;
     }
 
