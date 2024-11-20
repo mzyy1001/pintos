@@ -230,7 +230,11 @@ process_exit (void)
     }
   }
 
-
+  if (thread_current()->executable_file) {
+    file_allow_write(thread_current()->executable_file);
+    file_close(thread_current()->executable_file);
+    cur->executable_file = NULL;
+  }
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -362,7 +366,8 @@ load (void *args_, const char *file_name, void (**eip) (void), void **esp)
     printf ("load: %s: open failed\n", file_name);
     goto done;
   }
-
+  file_deny_write(file);
+  thread_current()->executable_file = file;
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
       || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)

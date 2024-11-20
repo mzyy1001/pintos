@@ -214,8 +214,7 @@ write (int fd, const void *buffer, unsigned size) {
   /* Check size exits, may be unnecessary. */
   if (size == 0) {
     return 0;
-  }
-
+  } 
   /* TODO(May need to have mutex acquiring in fd 1 writing. */
   int bytes_written = 0;
   if (fd == 1) {
@@ -237,6 +236,9 @@ write (int fd, const void *buffer, unsigned size) {
     struct file *file = fd_table_get(fd);
     if (file == NULL) {
       return -1;
+    }
+    if (is_deny_write(file)) {
+      return 0;
     }
     acquire_filesys();
     bytes_written = file_write(file, buffer, size);
