@@ -8,6 +8,17 @@
 #include "pagedir.h"
 #include "filesys/file.h"
 
+#define NUMBER_OF_SYSCALLS 13
+
+/* Exit code when given bad (invalid or out of range) arguments. */
+#define BAD_ARGUMENTS (-1)
+
+/* Syscall exit code when an operation with the fd table errors. */
+#define FD_TABLE_ERROR (-1)
+
+/* Process identifier. */
+typedef int pid_t;
+
 static void syscall_handler (struct intr_frame *);
 
 /* Used to ensure safe memory access by verifying a pointer pre-dereference.
@@ -22,41 +33,58 @@ verify (void *vaddr) {
   return false;
 }
 
-/* Used to ensure safe memory access by verifying a string.*/
-static bool
-verify_string (char *target_string) {
-  if (target_string == NULL || *target_string == '\0') {
-    return false;
+/* Extract a single argument and return it, not moving the pointer. */
+static int
+extract_arg_n(int *stack_pointer, int arg_num) {
+  if (verify(stack_pointer + arg_num)) {
+    // TODO(MAY BE UNDEFINED OP FIX THIS)
+    return *(stack_pointer + arg_num);
   }
-  return true;
+  else {
+    thread_exit ();
+  }
 }
+
+/* Extract the first argument and return it, not moving the pointer. */
+#define extract_arg_1(stack_pointer) (extract_arg_n(stack_pointer, 1))
+/* Extract the second argument and return it, not moving the pointer. */
+#define extract_arg_2(stack_pointer) (extract_arg_n(stack_pointer, 2))
+/* Extract the third argument and return it, not moving the pointer. */
+#define extract_arg_3(stack_pointer) (extract_arg_n(stack_pointer, 3))
 
 /* Terminates PintOS. This should be seldom used, because you lose some
 information about possible deadlock situations, etc. */
-void
-halt (void) {
+static void
+halt (struct intr_frame *UNUSED) {
   shutdown_power_off();
 }
 
 /* Terminates the current user program, sending its exit status to the kernel.
 If the process’s parent waits for it, this is what will be returned. */
-void
+static void
 exit (int status) {
   struct parent_child *parent_pach = thread_current()->parent;
 
   sema_down(&parent_pach->sema);
   parent_pach->child_exit_code = status;
   sema_up(&parent_pach->sema);
-  
+
   thread_exit();
+}
+
+/* Wraps exit allowing it to be called by the syscall handler. */
+static void
+sys_exit (struct intr_frame *f) {
+  exit(extract_arg_1((int *) f->esp));
 }
 
 /* Runs the executable whose name is given in cmd line, passing any given
 arguments, and returns the new process’s program id (pid). */
-pid_t
-exec (const char *cmd_line ) {
-//TODO()
-  return -1;
+static void
+exec (struct intr_frame *f) {
+  const char *command_line = (char *) extract_arg_1((int *) f->esp);
+  //TODO()
+  f ->eax = (int32_t) -1;
 
 /* Runs the executable whose name is given in cmd line, passing any given arguments, and
 returns the new process’s program id (pid). Must return pid -1, which otherwise should not
@@ -66,39 +94,42 @@ executable. You must use appropriate synchronization to ensure this.
 */
 }
 
-int
-wait (pid_t pid) {
-  return process_wait(pid);
+static void
+wait (struct intr_frame *f) {
+  pid_t pid = extract_arg_1((int *) f->esp);
+  f->eax = (int32_t) process_wait(pid);
 }
 
 
 /* Creates a new file called file initially initial size bytes in size. Returns
 whether it was successfully created. Creating a new file doesn't open it. */
-bool
-create (const char *file_name, unsigned initial_size){
+static void
+create (struct intr_frame *f) {
+  const char *file_name = (char *) extract_arg_1((int *) f->esp);
+  unsigned initial_size = (unsigned) extract_arg_2 ((int *) f->esp);
   /* Replace 2nd & 3rd condition with string validate function */
   if (initial_size > INT_MAX || !verify(file_name)) {
-    exit(-1);
+    exit(BAD_ARGUMENTS);
   }
   acquire_filesys();
-  bool creation_outcome = filesys_create(file_name, (off_t) initial_size);
+  f->eax = (int32_t) filesys_create(file_name, (off_t) initial_size);
   release_filesys();
-  return creation_outcome;
 }
 
 /* Deletes the file called file. Returns whether it was successfully deleted.
 A file may be removed regardless of whether it is open or closed, and removing
 an open file does not close it. */
-bool
-remove (const char *file_name) {
+static void
+remove (struct intr_frame *f) {
+  const char *file_name = (char *) extract_arg_1((int *) f->esp);
   /* Replace 2nd & 3rd condition with string validate function */
   if (!verify(file_name) || *file_name == '\0') {
-    return false;
+    f->eax = (int32_t) false;
+    return;
   }
   acquire_filesys();
-  bool remove_outcome = filesys_remove(file_name);
+  f->eax = (int32_t) filesys_remove(file_name);
   release_filesys();
-  return remove_outcome;
 }
 
 /* Opens the file called file. Returns a nonnegative integer handle called a
@@ -107,49 +138,56 @@ file is opened more than once, whether by a single process or different
 processes, each open returns a new file descriptor. Different file descriptors
 for a single file are closed independently in separate calls to close and they
 do not share a file position. */
-int
-open (const char *file_name) {
+static void
+open (struct intr_frame *f) {
+  const char *file_name = (char *) extract_arg_1((int *) f->esp);
   /* Replace condition with string validate function */
   if (!verify(file_name)) {
-    exit(-1);
+    exit(BAD_ARGUMENTS);
   }
   if (*file_name == '\0') {
-   return -1;
+    f->eax = (int32_t) BAD_ARGUMENTS;
+    return;
   }
   acquire_filesys();
   struct file *file = filesys_open(file_name);
   release_filesys();
   if (file == NULL) {
-    return -1;
+    f->eax = (int32_t) -1;
+    return;
   }
-  return fd_table_add(file);
+  f->eax = (int32_t) fd_table_add(file);
 }
 
 /* Returns the size, in bytes, of the file open as fd. -1 on no match. */
-int
-filesize (int fd) {
+static void
+filesize (struct intr_frame *f) {
+  int fd = extract_arg_1((int *) f->esp);
   /* May need to add an fd check here too. */
   struct file *file = fd_table_get(fd);
   // TODO(May want to change this behaviour to kill the program or something)
   /* No matching file found. */
   /* may need to add a validate fd function to ensure fd isn't 0 or 1, and that it is less than some MAX_FD. */
   if (file == NULL) {
-    return -1;
+    f->eax = (int32_t) FD_TABLE_ERROR;
+    return;
   }
   acquire_filesys();
-  int file_len = file_length(file);
+  f->eax = (int32_t) file_length(file);
   release_filesys();
-  return file_len;
 }
 
 /* Reads size bytes from the file open as fd into buffer. Returns the number
 of bytes actually read (0 at end of file), or -1 if the file could not be read
 (excluding end of file). Fd 0 will read from keyboard.*/
-int
-read (int fd, void *buffer, unsigned size) {
+static void
+read (struct intr_frame *f) {
+  int fd = extract_arg_1((int *) f->esp);
+  void *buffer = (void *) extract_arg_2((int *) f->esp);
+  unsigned size = (unsigned) extract_arg_3 ((int *) f->esp);
   /* Check if buffer is valid. */
   if (!verify(buffer)) {
-    exit(-1);
+    exit(BAD_ARGUMENTS);
   }
   /* TODO(May need to have mutex acquiring in fd 0 reading. */
   if (fd == 0) {
@@ -159,32 +197,40 @@ read (int fd, void *buffer, unsigned size) {
       buf[i] = input_getc();
       bytes_read++;
     }
-    return bytes_read;
+    f->eax = (int32_t) bytes_read;
+    return;
   } else if (fd > 1 && fd < MAX_FILES) {
     struct file *file = fd_table_get(fd);
+    /* FD table fails on file descriptor. */
     if (file == NULL) {
-      return -1;  // Invalid file descriptor.
+      f->eax = (int32_t) FD_TABLE_ERROR;
+      return;
     }
     acquire_filesys();
-    off_t file_red = file_read(file, buffer, size);
+    f->eax = (int32_t) file_read(file, buffer, size);
     release_filesys();
-    return file_red;
+    return;
   }
-  return -1;  // Invalid file descriptor.
+  /* Invalid file descriptor. */
+  f->eax = (int32_t) BAD_ARGUMENTS;
 }
 
 /* Writes size bytes from buffer to the open file fd. Returns the number of
 bytes actually written, which may be less than size if some bytes could not
 be written.*/
-int
-write (int fd, const void *buffer, unsigned size) {
+static void
+write (struct intr_frame *f) {
+  int fd = extract_arg_1((int *) f->esp);
+  const void *buffer = (void *) extract_arg_2((int *) f->esp);
+  unsigned size = (unsigned) extract_arg_3 ((int *) f->esp);
   /* Check if buffer is invalid. */
   if (!verify(buffer)) {
-        exit(-1);
+    exit(BAD_ARGUMENTS);
   }
   /* Check size exits, may be unnecessary. */
   if (size == 0) {
-    return 0;
+    f->eax = 0;
+    return;
   }
 
   /* TODO(May need to have mutex acquiring in fd 1 writing. */
@@ -204,10 +250,12 @@ write (int fd, const void *buffer, unsigned size) {
         bytes_written += remaining;
     }
   } else {
-    // Write to a regular file.
+    /* Write to a regular file. */
     struct file *file = fd_table_get(fd);
+    /* FD table fails on file descriptor. */
     if (file == NULL) {
-      return -1;
+      f->eax = (int32_t) FD_TABLE_ERROR;
+      return;
     }
     acquire_filesys();
     bytes_written = file_write(file, buffer, size);
@@ -216,7 +264,7 @@ write (int fd, const void *buffer, unsigned size) {
       bytes_written = 0;
     }
   }
-  return bytes_written;
+  f->eax = (int32_t) bytes_written;
 /* Writing past end-of-file would normally extend the file, but file growth is not implemented
 by the basic file system. The expected behaviour is to write as many bytes as possible up to
 end-of-file and return the actual number written, or 0 if no bytes could be written at all.
@@ -228,8 +276,10 @@ may end up interleaved on the console, confusing both human readers and our grad
 
 /* Changes the next byte to be read or written in open file fd to position,
 expressed in bytes from the beginning of the file (0 would be the start). */
-void
-seek (int fd, unsigned position) {
+static void
+seek (struct intr_frame *f) {
+  int fd = extract_arg_1((int *) f->esp);
+  unsigned position = (unsigned) extract_arg_2 ((int *) f->esp);
   /* May need to add an fd check here too. */
   /* Out of bounds position would overflow in type conversion. */
   if (position > INT_MAX) {
@@ -250,28 +300,30 @@ seek (int fd, unsigned position) {
 
 /* Returns the position of the next byte to be read or written in open file fd,
 expressed in bytes from the beginning of the file. */
-unsigned
-tell (int fd) {
-  /* May need to add an fd check here too. */
+static void
+tell (struct intr_frame *f) {
+  int fd = extract_arg_1((int *) f->esp);
+  /* May need to add a fd check here too. */
   // TODO(Very similar to filesize, may be refactorable to avoid duplication)
   struct file *file = fd_table_get(fd);
   // TODO(May want to change this behaviour to say kill the program or something)
   /* No matching file found. */
   if (file == NULL) {
-    return -1;
+    f->eax = (int32_t) FD_TABLE_ERROR;
+    return;
   }
   acquire_filesys();
-  int file_pos = file_tell(file);
+  f->eax = (int32_t) file_tell(file);
   release_filesys();
-  return file_pos;
 }
 
 /* Closes file descriptor fd. Exiting or terminating a process implicitly
 closes all its open file descriptors, as if calling this function for each. */
 // TODO(Ensure this is called on all file descriptors when terminating or exiting a process)
-void
-close (int fd) {
-  /* May need to add an fd check here too. */
+static void
+close (struct intr_frame *f) {
+  int fd = extract_arg_1((int *) f->esp);
+  /* May need to add a fd check here too. */
   acquire_filesys();
   fd_table_close(fd);
   release_filesys();
@@ -283,93 +335,23 @@ syscall_init (void)
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
-/* Extract a single argument and return it, moving the pointer. */
-static int
-extract_arg_n(int *stack_pointer, int arg_num) {
-  if (verify(stack_pointer + arg_num)) {
-    return *(stack_pointer + arg_num);
-  }
-  else {
-    thread_exit ();
-  }
-}
+static void (*syscalls[NUMBER_OF_SYSCALLS]) (struct intr_frame *) = {
+  &halt, &sys_exit, &exec, &wait, &create, &remove, &open, &filesize, &read, &write, &seek, &tell, &close
+};
 
-/* Extract the first argument and return it, moving the pointer. */
-static int
-extract_arg_1(void *stack_pointer) {
-  return extract_arg_n(stack_pointer, 1);
-}
-
-/* Extract the second argument and return it, moving the pointer. */
-static int
-extract_arg_2(void *stack_pointer) {
-  return extract_arg_n(stack_pointer, 2);
-}
-
-/* Extract the third argument and return it, moving the pointer. */
-static int
-extract_arg_3(void *stack_pointer) {
-  return extract_arg_n(stack_pointer, 3);
-}
-
-
-static void
+void
 syscall_handler (struct intr_frame *f)
 {
   // printf ("system call!\n");
   /* Match to the right handler. */
-  // TODO(MINIMISE DUPLICATION WITH HELPER FUNCTION)
-  // TODO(Consider using function pointers in place of large switch statement or in combination with helper function and numb_args)
   // TODO(Ensure everything is synced as it should be)
   if (verify(f->esp)) {
     int *stack_pointer = f -> esp;
-    switch (*stack_pointer) {
-      case SYS_HALT:
-        halt();
-        break;
-      case SYS_EXIT:
-        exit(extract_arg_1(stack_pointer));
-        break;
-      case SYS_EXEC:
-        f->eax = (int32_t) exec((char *) extract_arg_1(stack_pointer));
-        break;
-      case SYS_WAIT:
-        f->eax = (int32_t) wait(extract_arg_1(stack_pointer));
-        break;
-      case SYS_CREATE:
-        f->eax = (int32_t) create((char *) extract_arg_1(stack_pointer), (unsigned) extract_arg_2(stack_pointer));
-        break;
-      case SYS_REMOVE:
-        f->eax = (int32_t) remove((char *) extract_arg_1(stack_pointer));
-        break;
-      case SYS_OPEN:
-        f->eax = (int32_t) open((char *) extract_arg_1(stack_pointer));
-        break;
-      case SYS_FILESIZE:
-        f->eax = (int32_t) filesize(extract_arg_1(stack_pointer));
-        break;
-      case SYS_READ:
-        f->eax = (int32_t) read(extract_arg_1(stack_pointer), (void *) extract_arg_2(stack_pointer), (unsigned) extract_arg_3(stack_pointer));
-        break;
-      case SYS_WRITE:
-        f->eax = (int32_t) write(extract_arg_1(stack_pointer), (void *) extract_arg_2(stack_pointer), (unsigned) extract_arg_3(stack_pointer));
-        break;
-      case SYS_SEEK:
-        seek(extract_arg_1(stack_pointer), (unsigned) extract_arg_2(stack_pointer));
-        break;
-      case SYS_TELL:
-        f->eax = tell(extract_arg_1(stack_pointer));
-        break;
-      case SYS_CLOSE:
-        close(extract_arg_1(stack_pointer));
-        break;
-      default:
-        //TODO(FIGURE OUT HOW TO MORE CORRECTLY HANDLE INVALID CODE)
-        exit (-1);
-    }
+    if (*stack_pointer < NUMBER_OF_SYSCALLS) {
+      syscalls[*stack_pointer](f);
+      return;
+    }Z
   }
   /* Invalid pointer terminates user process. */
-  else {
-    thread_exit ();
-  }
+  exit (BAD_ARGUMENTS);
 }
