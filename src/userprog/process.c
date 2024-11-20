@@ -212,14 +212,15 @@ process_exit (void)
 
 
   // Traverse the list of children, letting each child know it has exited (e.g. parent_exit = true). use the sema
-  struct list_elem *e;
   struct list *children = &cur->children;
+  struct list_elem *e = list_begin(children);
 
-  for (e = list_begin(children); e != list_end(children); e = list_next(e)) {
+  while (e != list_end(children)) {
     struct parent_child *child_pach = list_entry(e, struct parent_child, child_elem);
     sema_down(&child_pach->sema);
 
     if (child_pach->child_exit) {
+      e = list_remove(e);
       free(child_pach);
     } else {
       child_pach->parent_exit = true;
@@ -227,6 +228,7 @@ process_exit (void)
       sema_up(&child_pach->sema);
     }
   }
+
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
