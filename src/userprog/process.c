@@ -167,7 +167,8 @@ process_wait (tid_t child_tid)
   /* check if parent called this on the same tiD
     if it did, it would have waited for child to up the waiting semaphore
     by then the child has already set child_exit to true */
-  if (child_pach->child_exit == true) {
+  
+  if (child_pach->wait == true) {
     return -1;
   }
 
