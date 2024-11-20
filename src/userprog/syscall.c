@@ -56,8 +56,13 @@ halt (struct intr_frame *UNUSED) {
 /* Terminates the current user program, sending its exit status to the kernel.
 If the process’s parent waits for it, this is what will be returned. */
 static void
-exit(int status) {
-  thread_current()->exit_status = status;
+exit (int status) {
+  struct parent_child *parent_pach = thread_current()->parent;
+
+  sema_down(&parent_pach->sema);
+  parent_pach->child_exit_code = status;
+  sema_up(&parent_pach->sema);
+
   thread_exit();
 }
 
@@ -103,6 +108,7 @@ create (struct intr_frame *f) {
   acquire_filesys();
   f->eax = (int32_t) filesys_create(file_name, (off_t) initial_size);
   release_filesys();
+  return creation_outcome;
 }
 
 /* Deletes the file called file. Returns whether it was successfully deleted.
@@ -218,7 +224,7 @@ write (struct intr_frame *f) {
   }
   /* Check size exits, may be unnecessary. */
   if (size == 0) {
-    f->eax =  0;
+    f->eax = 0;
     return;
   }
 
