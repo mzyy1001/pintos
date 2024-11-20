@@ -86,12 +86,39 @@ exec (struct intr_frame *f) {
   //TODO()
   f ->eax = (int32_t) -1;
 
-/* Runs the executable whose name is given in cmd line, passing any given arguments, and
-returns the new process’s program id (pid). Must return pid -1, which otherwise should not
-be a valid pid, if the program cannot load or run for any reason. Thus, the parent process
-cannot return from the exec until it knows whether the child process successfully loaded its
-executable. You must use appropriate synchronization to ensure this.
-*/
+    /* Make a copy of the command line. */
+    char *cmd_copy = palloc_get_page(0);
+    if (cmd_copy == NULL) {
+        return -1;
+    }
+    strlcpy(cmd_copy, cmd_line, PGSIZE);
+
+    /* Create the new process. */
+    tid_t tid = process_execute(cmd_copy);
+    if (tid == TID_ERROR) {
+        palloc_free_page(cmd_copy);
+        return -1;
+    }
+
+    /* Find the corresponding intermediary (parent_child) structure corresponding to 
+      a child's tid. */
+    struct parent_child *child_pach = get_child_pach(tid);
+    if (child_pach == NULL) {
+        palloc_free_page(cmd_copy);
+        return -1;
+    }
+
+    /* Wait for the child to finish loading (succesfully or not). */
+    sema_down(&child_pach->child_loaded); 
+
+    /* Check if the child process loaded successfully. */
+    if (!child_pach->child_load_success) {
+        tid = -1;
+    }
+
+    /* Clean up the command line copy. */
+    palloc_free_page(cmd_copy);
+    return tid;
 }
 
 static void
