@@ -42,7 +42,12 @@ halt (void) {
 If the process’s parent waits for it, this is what will be returned. */
 void
 exit (int status) {
-  thread_current()->exit_status = status;
+  struct parent_child *parent_pach = thread_current()->parent;
+
+  sema_down(&parent_pach->sema);
+  parent_pach->child_exit_code = status;
+  sema_up(&parent_pach->sema);
+  
   thread_exit();
 }
 

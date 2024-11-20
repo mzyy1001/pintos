@@ -335,7 +335,6 @@ void init_parent_child(struct thread *child, struct thread *parent) {
   parent_child->parent_exit = false;
   parent_child->child_exit = false;
   parent_child->child_exit_code = -1; /* initialised to -1. exit syscall will modify it*/
-  parent_child->wait = false;         /* will become true if parent waits on child*/
   sema_init(&parent_child->sema, 1);
   parent_child->wait = false;
   sema_init(&parent_child->waiting, 0);
@@ -871,7 +870,6 @@ init_thread (struct thread *t, const char *name, int priority)
   }
   #ifdef USERPROG
     t->next_free_fd = FD_START_VALUE;
-    t->exit_status = -1;
   #endif
   
   t->status = THREAD_BLOCKED;

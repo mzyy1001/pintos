@@ -63,7 +63,7 @@ struct parent_child
    int child_exit_code;
    struct semaphore sema;           /* access synchronisation*/
    bool wait;                       /* to check if wait is called twice */
-   struct semaphore waiting;
+   struct semaphore waiting;        /* so child can signal to parent it has exited*/
    };
 
 /* A kernel thread or user process.
@@ -143,7 +143,6 @@ struct thread
   int next_free_fd;
 #ifdef USERPROG
    /* Owned by userprog/process.c. */
-   int exit_status;                           /* Niceness */
    uint32_t *pagedir;                  /* Page directory. */
    struct list children;
    struct parent_child *parent;

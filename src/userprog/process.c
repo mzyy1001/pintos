@@ -18,10 +18,18 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include <stdio.h>
+#include "threads/malloc.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (void *args_, const char *cmdline, void (**eip) (void), void **esp);
 static bool setup_stack (void **esp, void *args_, char *file_name);
+#define CHECK_STACK_OVERFLOW(esp) \
+  do { \
+    if ((esp) < (uint8_t *)PHYS_BASE - PGSIZE) { \
+      success = false; \
+      goto done; \
+    } \
+  } while (0)
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -133,14 +141,11 @@ process_wait (tid_t child_tid)
     if (child_pach->child->tid == child_tid) {
       // child found!
 
-      /* check if child was killed by kernel.
-      basically check if child is dead and its exit code is -1 */
-      if (child_pach->child_exit == true && child_pach->child_exit_code == -1) {
-        return -1;
-      }
-
-      // check if parent called this on the same tiD
-      if (child_pach->wait == true) {
+      /* check if parent called this on the same tiD
+         if it did, it would have waited for child to up the waiting semaphore
+         by then the child has already set child_exit to true
+      */
+      if (child_pach->child_exit == true) {
         return -1;
       }
 
@@ -150,6 +155,9 @@ process_wait (tid_t child_tid)
       sema_up(&child_pach->sema);
 
       sema_down(&child_pach->waiting);      /* wait for child to exit*/
+
+      // here we know that the child is dead and has provided the exit code
+      // see process_exit
       return child_pach->child_exit_code;
     }
   }
@@ -165,9 +173,10 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
-  printf("%s: exit(%d)\n", cur->name, cur->exit_status);
   struct parent_child *parent_pach = cur->parent;
+
   sema_down(&parent_pach->sema);
+  printf("%s: exit(%d)\n", cur->name, parent_pach->child_exit_code);
 
 
   //if parent has exited
@@ -196,7 +205,6 @@ process_exit (void)
       free(child_pach);
     } else {
       child_pach->parent_exit = true;
-      //set parent exit code ???
       //No need to up waiting
       sema_up(&child_pach->sema);
     }
@@ -570,6 +578,7 @@ setup_stack (void **esp, void *args_, char *file_name)
       while (arg != NULL)
       {
         *esp -= strlen(arg) + 1;
+        CHECK_STACK_OVERFLOW(*esp);
         memcpy(*esp, arg, strlen(arg) + 1);
         argv[argc++] = *esp;
         arg = strtok_r(NULL, " ", &save_ptr);
@@ -579,6 +588,7 @@ setup_stack (void **esp, void *args_, char *file_name)
       if (align)
       {
         *esp -= align;
+        CHECK_STACK_OVERFLOW(*esp);
         memset(*esp, 0, align);
       }
       // Push argument addresses
@@ -586,23 +596,32 @@ setup_stack (void **esp, void *args_, char *file_name)
       for (int i = argc; i >= 0; i--)
       {
         *esp -= sizeof(char *);
+        CHECK_STACK_OVERFLOW(*esp);
         memcpy(*esp, &argv[i], sizeof(char *));
       }
       // Push argv and argc
       char **argv_ptr = *esp;
       *esp -= sizeof(char **);
+      CHECK_STACK_OVERFLOW(*esp);
       memcpy(*esp, &argv_ptr, sizeof(char **));
       *esp -= sizeof(int);
+      CHECK_STACK_OVERFLOW(*esp);
       *(int *)*esp = argc;
 
       // Push a fake return address
       *esp -= sizeof(void *);
+      CHECK_STACK_OVERFLOW(*esp);
       *(void **)*esp = 0;
     }
     else
     {
       palloc_free_page(kpage);
     }
+  }
+  done:
+  if (!success && kpage != NULL)
+  {
+    palloc_free_page(kpage);
   }
   return success;
 }
