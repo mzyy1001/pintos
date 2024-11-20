@@ -18,6 +18,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include <stdio.h>
+#include "threads/malloc.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (void *args_, const char *cmdline, void (**eip) (void), void **esp);
@@ -136,14 +137,11 @@ process_wait (tid_t child_tid)
     if (child_pach->child->tid == child_tid) {
       // child found!
 
-      /* check if child was killed by kernel.
-      basically check if child is dead and its exit code is -1 */
-      if (child_pach->child_exit == true && child_pach->child_exit_code == -1) {
-        return -1;
-      }
-
-      // check if parent called this on the same tiD
-      if (child_pach->wait == true) {
+      /* check if parent called this on the same tiD
+         if it did, it would have waited for child to up the waiting semaphore
+         by then the child has already set child_exit to true
+      */
+      if (child_pach->child_exit == true) {
         return -1;
       }
 
@@ -153,6 +151,9 @@ process_wait (tid_t child_tid)
       sema_up(&child_pach->sema);
 
       sema_down(&child_pach->waiting);      /* wait for child to exit*/
+
+      // here we know that the child is dead and has provided the exit code
+      // see process_exit
       return child_pach->child_exit_code;
     }
   }
@@ -168,9 +169,10 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
-  printf("%s: exit(%d)\n", cur->name, cur->exit_status);
   struct parent_child *parent_pach = cur->parent;
+
   sema_down(&parent_pach->sema);
+  printf("%s: exit(%d)\n", cur->name, parent_pach->child_exit_code);
 
 
   //if parent has exited
@@ -199,7 +201,6 @@ process_exit (void)
       free(child_pach);
     } else {
       child_pach->parent_exit = true;
-      //set parent exit code ???
       //No need to up waiting
       sema_up(&child_pach->sema);
     }
