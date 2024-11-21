@@ -7,6 +7,9 @@
 #include "devices/shutdown.h"
 #include "pagedir.h"
 #include "filesys/file.h"
+#include <string.h>
+#include "devices/input.h"
+#include "threads/palloc.h"
 
 /* Number of syscalls implemented that the syscall handler can call. */
 #define NUMBER_OF_SYSCALLS 13
@@ -199,7 +202,7 @@ create (struct intr_frame *f) {
   const char *file_name = (char *) extract_arg_1((int *) f->esp);
   unsigned initial_size = (unsigned) extract_arg_2 ((int *) f->esp);
   /* Replace 2nd & 3rd condition with string validate function */
-  if (initial_size > INT_MAX || !verify(file_name)) {
+  if (initial_size > INT_MAX || !verify_string(file_name)) {
     exit(BAD_ARGUMENTS);
   }
   acquire_filesys();
@@ -284,7 +287,7 @@ read (struct intr_frame *f) {
     unsigned bytes_read = NOTHING;
     char *buf = buffer;
     acquire_filesys();
-    for (int i = 0; i < size; i++) {
+    for (unsigned i = 0; i < size; i++) {
       buf[i] = input_getc();
       bytes_read++;
     }
@@ -413,16 +416,14 @@ static void
 close (struct intr_frame *f) {
   int fd = extract_arg_1((int *) f->esp);
   /* May need to add a fd check here too. */
-  acquire_filesys();
   fd_table_close(fd);
-  release_filesys();
 }
 
 static syscall_t *syscalls[NUMBER_OF_SYSCALLS] = {
   &halt, &sys_exit, &exec, &wait, &create, &remove, &open, &filesize, &read, &write, &seek, &tell, &close
 };
 
-void
+static void
 syscall_handler (struct intr_frame *f)
 {
   // printf ("system call!\n");

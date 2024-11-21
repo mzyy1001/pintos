@@ -38,7 +38,7 @@ struct parent_child *get_child_pach(tid_t c_tid);
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
 tid_t
-process_execute(const char *arguments)
+process_execute (const char *arguments)
 {
   char *args_copy;
   tid_t tid;
@@ -107,9 +107,9 @@ start_process (void *args_)
   {
     thread_exit ();
   }
-  uint32_t *stack = (uint32_t *)if_.esp;
 
 #ifdef DEBUG
+  uint32_t *stack = (uint32_t *)if_.esp;
   printf("Stack contents before starting user process:\n");
   for (int i = 0; i < 16; i++) // Print first 16 words
   {

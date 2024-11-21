@@ -143,10 +143,10 @@ struct thread
    struct list_elem bfs_elem;          /* List element for BFS in calc_thread_priority() */
    struct list locks;                  /* List of locks that thread has acquired */
 
-  struct hash file_descriptor_table;
-  int next_free_fd;
 #ifdef USERPROG
    /* Owned by userprog/process.c. */
+   struct hash file_descriptor_table;
+   int next_free_fd;
    uint32_t *pagedir;                  /* Page directory. */
    struct list children;
    struct parent_child *parent;

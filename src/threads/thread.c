@@ -421,7 +421,11 @@ thread_tid (void)
 /* Frees the file_descriptor_element of the given hash element. */
 static void
 fd_hash_elem_free(struct hash_elem *e, void *aux UNUSED) {
-  free(hash_entry(e, struct file_descriptor_element, hash_elem));
+  struct file_descriptor_element * elem_to_free = hash_entry(e, struct file_descriptor_element, hash_elem);
+  acquire_filesys();
+  file_close(elem_to_free->file_pointer);
+  release_filesys();
+  free(elem_to_free);
 }
 
 /* Deschedules the current thread and destroys it.  Never
@@ -722,8 +726,8 @@ thread_get_fd (void){
 file_descriptor_element. Returns -1 on a failed addition, the fd otherwise. */
 int
 fd_table_add (struct file* file) {
-  // TODO(This malloc is extremely dangerous triple check at the end);
   struct file_descriptor_element *new_fd = malloc(sizeof (struct file_descriptor_element));
+
   /* Unable to allocate memory, operation fails. */
   // TODO(Consider terminating the process in such a case)
   if (new_fd == NULL) {
@@ -736,6 +740,7 @@ fd_table_add (struct file* file) {
   new_fd->file_pointer = file;
   struct hash *hash_table = &(thread_current()->file_descriptor_table);
   struct hash_elem *added_elem = hash_insert(hash_table, &(new_fd->hash_elem));
+
   // TODO(May want to change implementation if added_elem is NULL e.g. to kill the program)
   /* Equivilent element already in table. Should never occur as thread_get_fd 
   is strictly monotone increasing and int limit is very large. */
@@ -777,7 +782,6 @@ fd_table_close (int fd) {
   if (result == NULL) {
     return;
   }
-  file_close(hash_entry (result, struct file_descriptor_element, hash_elem)->file_pointer);
   fd_hash_elem_free (result, NULL);
 }
 
