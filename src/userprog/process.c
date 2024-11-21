@@ -513,6 +513,19 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
   return true;
 }
 
+static void
+cleanup_allocated_pages(uint8_t *start_upage, uint8_t *end_upage) {
+  struct thread *t = thread_current();
+  while (start_upage < end_upage) {
+    void *kpage = pagedir_get_page(t->pagedir, start_upage);
+    if (kpage != NULL) {
+      pagedir_clear_page(t->pagedir, start_upage);
+      palloc_free_page(kpage);
+    }
+    start_upage += PGSIZE;
+  }
+}
+
 /* Loads a segment starting at offset OFS in FILE at address
    UPAGE.  In total, READ_BYTES + ZERO_BYTES bytes of virtual
    memory are initialized, as follows:
@@ -536,6 +549,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (ofs % PGSIZE == 0);
 
   file_seek (file, ofs);
+  uint8_t *start_upage = upage;
   while (read_bytes > 0 || zero_bytes > 0)
   {
     /* Calculate how to fill this page.
@@ -553,6 +567,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       /* Get a new page of memory. */
       kpage = palloc_get_page (PAL_USER);
       if (kpage == NULL){
+        cleanup_allocated_pages(start_upage, upage);
         return false;
       }
 
@@ -560,6 +575,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       if (!install_page (upage, kpage, writable))
       {
         palloc_free_page (kpage);
+        cleanup_allocated_pages(start_upage, upage);
         return false;
       }
 
@@ -574,8 +590,10 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
     /* Load data into the page. */
     if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes){
+      cleanup_allocated_pages(start_upage, upage);
       return false;
     }
+
     memset (kpage + page_read_bytes, 0, page_zero_bytes);
 
     /* Advance. */
