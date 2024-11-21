@@ -23,7 +23,8 @@
 #define MEMORY_ALLOCATION_ERROR (-1)
 /* Max string argument length to prevent incorrectly structured strings infinite looping. */
 #define MAX_STRING_LENGTH (2 << 20)
-/* Syscall return code for return that 0 of whatever was expected to be done was done. */
+/* Syscall return code for return that 0 of whatever was 
+expected to be done/given was done/given. */
 #define NOTHING 0
 /* The fd value that refers to the console (for output). */
 #define CONSOLE_FD 1
@@ -226,7 +227,7 @@ remove (struct intr_frame *f) {
 “file descriptor” (fd), or -1 if the file could not be opened. When a single
 file is opened more than once, whether by a single process or different
 processes, each open returns a new file descriptor. Different file descriptors
-for a single file are closed independently in separate calls to close and they
+for a single file are closed independently in separate calls to close and
 do not share a file position. */
 static void
 open (struct intr_frame *f) {
@@ -264,7 +265,7 @@ filesize (struct intr_frame *f) {
 
 /* Reads size bytes from the file open as fd into buffer. Returns the number
 of bytes actually read (0 at end of file), or -1 if the file could not be read
-(excluding end of file). Fd 0 will read from keyboard.*/
+(excluding end of file). Fd 0 will read from keyboard. */
 static void
 read (struct intr_frame *f) {
   int fd = extract_arg_1((int *) f->esp);
@@ -278,12 +279,12 @@ read (struct intr_frame *f) {
   if (fd == KEYBOARD_FD) {
     unsigned bytes_read = NOTHING;
     char *buf = buffer;
-    acquire_filesys();
     for (unsigned i = 0; i < size; i++) {
+      acquire_filesys();
       buf[i] = input_getc();
+      release_filesys();
       bytes_read++;
     }
-    release_filesys();
     f->eax = (int32_t) bytes_read;
     return;
   }
@@ -299,7 +300,7 @@ read (struct intr_frame *f) {
 
 /* Writes size bytes from buffer to the open file fd. Returns the number of
 bytes actually written, which may be less than size if some bytes could not
-be written.*/
+be written. */
 static void
 write (struct intr_frame *f) {
   int fd = extract_arg_1((int *) f->esp);
@@ -320,18 +321,19 @@ write (struct intr_frame *f) {
   if (fd == CONSOLE_FD) {
     unsigned remaining = size;
     const char *buf = buffer;
-    acquire_filesys();
+
     /* Write in 300 byte chunks. */
     while (remaining > 300) {
-        putbuf(buf, 300);
-        buf += 300;
-        remaining -= 300;
-        bytes_written += 300;
+      acquire_filesys();
+      putbuf(buf, 300);
+      release_filesys();
+      buf += 300;
+      remaining -= 300;
+      bytes_written += 300;
     }
-    release_filesys();
     if (remaining > 0) {
-        putbuf(buf, remaining);
-        bytes_written += remaining;
+      putbuf(buf, remaining);
+      bytes_written += remaining;
     }
   } else {
     /* Write to a regular file. */
@@ -360,7 +362,6 @@ static void
 seek (struct intr_frame *f) {
   int fd = extract_arg_1((int *) f->esp);
   unsigned position = (unsigned) extract_arg_2 ((int *) f->esp);
-  /* May need to add an fd check here too. */
   /* Out of bounds position would overflow in type conversion. */
   if (position > INT_MAX) {
     // TODO(Figure out how to correctly handle such an error case)
@@ -395,7 +396,6 @@ tell (struct intr_frame *f) {
 
 /* Closes file descriptor fd. Exiting or terminating a process implicitly
 closes all its open file descriptors, as if calling this function for each. */
-// TODO(Ensure this is called on all file descriptors when terminating or exiting a process)
 static void
 close (struct intr_frame *f) {
   int fd = extract_arg_1((int *) f->esp);
@@ -403,25 +403,30 @@ close (struct intr_frame *f) {
   fd_table_close(fd);
 }
 
+/* List of function pointers of the syscalls with each at their value's 
+position to allow for indexing in into syscalls in syscall_handler. */
 static syscall_t *syscalls[NUMBER_OF_SYSCALLS] = {
   &halt, &sys_exit, &exec, &wait, &create, &remove, &open, &filesize, &read, &write, &seek, &tell, &close
 };
 
+/* Verifies an interrupt frams's stack pointer and then delegates
+handling to the correct syscall using function pointers. */
 static void
 syscall_handler (struct intr_frame *f)
 {
   if (!verify(f->esp)) {
-    exit(BAD_ARGUMENTS); // Terminate process if esp is invalid
+    exit(BAD_ARGUMENTS);
   }
 
   int *stack_pointer = f->esp;
   if (*stack_pointer < 0 || *stack_pointer >= NUMBER_OF_SYSCALLS) {
-    exit(BAD_ARGUMENTS); // Terminate process for invalid syscall number
+    exit(BAD_ARGUMENTS);
   }
 
   syscalls[*stack_pointer](f);
 }
 
+/* Initialises the intr*/
 void
 syscall_init (void)
 {

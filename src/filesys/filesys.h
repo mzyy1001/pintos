@@ -21,7 +21,7 @@ bool filesys_remove (const char *name);
 void acquire_filesys(void);
 void release_filesys(void);
 
-/* Wrappers of other file and filesys functions ensuring mutex. */
+/* Wrappers of file and filesys functions ensuring mutex. */
 bool synched_filesys_create (const char *name, off_t initial_size);
 struct file *synched_filesys_open (const char *name);
 bool synched_filesys_remove (const char *name);

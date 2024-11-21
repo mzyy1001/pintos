@@ -21,6 +21,8 @@ static bool load (void *args_, const char *cmdline, void (**eip) (void), void **
 static bool setup_stack (void **esp, void *args_, char *file_name);
 struct parent_child *get_child_pach(tid_t c_tid);
 
+/* Verifies that the stack pointer (`esp`) remains within safe
+memory bounds to prevent stack overflow. */
 #define CHECK_STACK_OVERFLOW(esp) \
   do { \
     if ((uint8_t *) (esp) < (uint8_t *) PHYS_BASE - PGSIZE) { \
@@ -76,7 +78,6 @@ process_execute (const char *arguments)
 static void
 start_process (void *args_)
 {
-  // need to implement : release args!!!
   char *args = args_;
   struct intr_frame if_;
   bool success;
@@ -123,9 +124,8 @@ start_process (void *args_)
   NOT_REACHED ();
 }
 
-/* Returns the intermediary structure (parent_child) of the parent's child with 
-  child_tid. 
-  The actual child thread * can be accessed by get_child_pach(child_tid)->child*/
+/* Returns the intermediary structure (parent_child) of the parent's child with child_tid. 
+The actual child thread * can be accessed using: get_child_pach(child_tid)->child */
 struct parent_child *get_child_pach(tid_t c_tid) {
   struct list_elem *e;
   struct parent_child *child_pach = NULL;
@@ -508,6 +508,7 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
   return true;
 }
 
+/* Cleans up and frees all allocated pages within the specified user address range. */
 static void
 cleanup_allocated_pages(uint8_t *start_upage, uint8_t *end_upage) {
   struct thread *t = thread_current();

@@ -12,11 +12,15 @@
 /* Semaphore to ensure safe use of filesystem. */
 static struct semaphore filesys_mutex;
 
+/* Acquire the filesys_mutex - if wrapping a single function consider 
+using a synched_function_name version if it exists instead. */
 void
 acquire_filesys() {
   sema_down(&filesys_mutex);
 }
 
+/* Releases the filesys_mutex - if wrapping a single function consider 
+using a synched_function_name version if it exists instead. */
 void
 release_filesys() {
   sema_up(&filesys_mutex);
@@ -74,7 +78,7 @@ filesys_create (const char *name, off_t initial_size)
   return success;
 }
 
-/* Wraps the filesys_create with a semaphore to ensure mutex of filesys. */
+/* Wraps filesys_create with a semaphore to ensure mutex of filesys. */
 bool 
 synched_filesys_create (const char *name, off_t initial_size) {
   sema_down(&filesys_mutex);
@@ -101,7 +105,7 @@ filesys_open (const char *name)
   return file_open (inode);
 }
 
-/* Wraps the filesys_open with a semaphore to ensure mutex of filesys. */
+/* Wraps filesys_open with a semaphore to ensure mutex of filesys. */
 struct file *
 synched_filesys_open (const char *name) {
   sema_down(&filesys_mutex);
@@ -124,7 +128,7 @@ filesys_remove (const char *name)
   return success;
 }
 
-/* Wraps the filesys_remove with a semaphore to ensure mutex of filesys. */
+/* Wraps filesys_remove with a semaphore to ensure mutex of filesys. */
 bool
 synched_filesys_remove (const char *name) {
   sema_down(&filesys_mutex);
@@ -133,7 +137,7 @@ synched_filesys_remove (const char *name) {
   return result;
 }
 
-/* Wraps the file_close with a semaphore to ensure mutex of filesys. */
+/* Wraps file_close with a semaphore to ensure mutex of filesys. */
 void
 synched_file_close (struct file *file) {
   sema_down(&filesys_mutex);
@@ -141,7 +145,7 @@ synched_file_close (struct file *file) {
   sema_up(&filesys_mutex);
 }
 
-/* Wraps the file_read with a semaphore to ensure mutex of filesys. */
+/* Wraps file_read with a semaphore to ensure mutex of filesys. */
 off_t
 synched_file_read (struct file *file, void *buffer, off_t offset) {
   sema_down(&filesys_mutex);
@@ -150,7 +154,7 @@ synched_file_read (struct file *file, void *buffer, off_t offset) {
   return result;
 }
 
-/* Wraps the file_write with a semaphore to ensure mutex of filesys. */
+/* Wraps file_write with a semaphore to ensure mutex of filesys. */
 off_t
 synched_file_write (struct file *file, const void *buffer, off_t offset) {
   sema_down(&filesys_mutex);
@@ -159,7 +163,7 @@ synched_file_write (struct file *file, const void *buffer, off_t offset) {
   return result;
 }
 
-/* Wraps the file_seek with a semaphore to ensure mutex of filesys. */
+/* Wraps file_seek with a semaphore to ensure mutex of filesys. */
 void
 synched_file_seek (struct file *file, off_t offset) {
   sema_down(&filesys_mutex);
@@ -167,7 +171,7 @@ synched_file_seek (struct file *file, off_t offset) {
   sema_up(&filesys_mutex);
 }
 
-/* Wraps the file_tell with a semaphore to ensure mutex of filesys. */
+/* Wraps file_tell with a semaphore to ensure mutex of filesys. */
 off_t
 synched_file_tell (struct file *file) {
   sema_down(&filesys_mutex);
@@ -176,7 +180,7 @@ synched_file_tell (struct file *file) {
   return result;
 }
 
-/* Wraps the file_length with a semaphore to ensure mutex of filesys. */
+/* Wraps file_length with a semaphore to ensure mutex of filesys. */
 off_t
 synched_file_length (struct file *file) {
   sema_down(&filesys_mutex);
@@ -185,7 +189,7 @@ synched_file_length (struct file *file) {
   return result;
 }
 
-/* Wraps the file_deny_write with a semaphore to ensure mutex of filesys. */
+/* Wraps file_deny_write with a semaphore to ensure mutex of filesys. */
 void
 synched_file_deny_write (struct file *file) {
   sema_down(&filesys_mutex);
@@ -193,7 +197,7 @@ synched_file_deny_write (struct file *file) {
   sema_up(&filesys_mutex);
 }
 
-/* Wraps the file_allow_write with a semaphore to ensure mutex of filesys. */
+/* Wraps file_allow_write with a semaphore to ensure mutex of filesys. */
 void
 synched_file_allow_write (struct file *file) {
   sema_down(&filesys_mutex);

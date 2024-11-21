@@ -237,12 +237,10 @@ thread_print_stats (void)
 }
 
 /* Returns the hash of the file_descriptor_element. */
-// TODO(May want to change the implementation)
 static unsigned
 fd_elem_hash (const struct hash_elem *a, void *aux UNUSED)
 {
-  struct file_descriptor_element *fd_elem_a = hash_entry (a, struct file_descriptor_element, hash_elem);
-  return hash_int (fd_elem_a->fd);
+  return hash_int((hash_entry(a, struct file_descriptor_element, hash_elem))->fd);
 }
 
 /* Compares 2 file descriptor elements using their fds. */
@@ -327,7 +325,7 @@ tid_t
   return tid;
 }
 
-/* Initialises parent_child struct */
+/* Initialises the parent_child struct. */
 void init_parent_child(struct thread *child, struct thread *parent) {
   struct parent_child *parent_child = malloc (sizeof(struct parent_child));
   parent_child->child_tid = child->tid;
@@ -418,7 +416,7 @@ thread_tid (void)
   return thread_current ()->tid;
 }
 
-/* Frees the file_descriptor_element of the given hash element. */
+/* Frees the file_descriptor_element of, and closes the file of, the given hash element. */
 static void
 fd_hash_elem_free(struct hash_elem *e, void *aux UNUSED) {
   struct file_descriptor_element * elem_to_free = hash_entry(e, struct file_descriptor_element, hash_elem);
@@ -738,8 +736,9 @@ fd_table_add (struct file* file) {
   struct hash_elem *added_elem = hash_insert(hash_table, &(new_fd->hash_elem));
 
   // TODO(May want to change implementation if added_elem is NULL e.g. to kill the program)
-  /* Equivilent element already in table. Should never occur as thread_get_fd 
-  is strictly monotone increasing and int limit is very large. */
+  /* Equivilent element already in table. Very rare to occur due to the size of INT_MAX,
+  consider searching for memory corruption if this occurs in a process that hasn't run for 
+  a very long time. */
   if (added_elem != NULL) {
     synched_file_close(file);
     free (new_fd);
@@ -749,14 +748,14 @@ fd_table_add (struct file* file) {
 }
 
 /* Takes an fd and returns the matching file * from the threads hashtable.
-  Still returns result on a failed match, which propagates through the NULL. */
+Still returns result on a failed match, which propagates through the NULL. */
 struct file *
 fd_table_get (int fd) {
   struct hash *hash_table = &(thread_current()->file_descriptor_table);
   struct file_descriptor_element temp_elem;
   temp_elem.fd = fd;
   struct hash_elem *result = hash_find(hash_table, &(temp_elem.hash_elem));
-  /* Propagate NULL.*/
+  /* Most probably a bad fd recieved, propagates NULL. */
   if (result == NULL) {
     return NULL;
   }
