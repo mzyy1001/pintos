@@ -3,21 +3,17 @@
 #include <inttypes.h>
 #include <round.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
-#include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 #include "threads/flags.h"
-#include "threads/init.h"
 #include "threads/interrupt.h"
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
-#include <stdio.h>
 #include "threads/malloc.h"
 
 static thread_func start_process NO_RETURN;
@@ -27,7 +23,7 @@ struct parent_child *get_child_pach(tid_t c_tid);
 
 #define CHECK_STACK_OVERFLOW(esp) \
   do { \
-    if ((esp) < (uint8_t *)PHYS_BASE - PGSIZE) { \
+    if ((uint8_t *) (esp) < (uint8_t *) PHYS_BASE - PGSIZE) { \
       success = false; \
       goto done; \
     } \
@@ -644,8 +640,7 @@ setup_stack (void **esp, void *args_, char *file_name)
           goto done;
         }
         args_size += arg_len + ((uintptr_t)(*esp) % 4);
-        if ((uint8_t *)*esp < (uint8_t *)PHYS_BASE - PGSIZE ||
-            *esp < (args_size + argc * sizeof(char *) + sizeof(char **) + sizeof(int) + sizeof(void *))) {
+        if ((uint8_t *)*esp < (uint8_t *)PHYS_BASE - PGSIZE) {
           success = false;
           goto done;
         }
@@ -695,13 +690,10 @@ setup_stack (void **esp, void *args_, char *file_name)
   done:
   if (!success && kpage != NULL)
   {
-    if (kpage != NULL)
-    {
-      palloc_free_page(kpage);
-      void *upage = ((uint8_t *)PHYS_BASE) - PGSIZE;
-      pagedir_clear_page(thread_current()->pagedir, upage);
-      kpage = NULL;
-    }
+    palloc_free_page(kpage);
+    void *upage = ((uint8_t *)PHYS_BASE) - PGSIZE;
+    pagedir_clear_page(thread_current()->pagedir, upage);
+    kpage = NULL;
   }
   if (argv != NULL)
   {

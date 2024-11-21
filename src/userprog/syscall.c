@@ -35,8 +35,7 @@ typedef int pid_t;
 /* Syscall function. */
 typedef void (syscall_t)(struct intr_frame *);
 
-/* Used to ensure safe memory access by verifying a pointer pre-dereference.
-TODO(Should it be called with interrupts off, does it need mutex acquire or will it be fine?) */
+/* Used to ensure safe memory access by verifying a pointer pre-dereference. */
 static bool
 verify (void *vaddr) {
   if (vaddr != NULL && is_user_vaddr(vaddr)) {
