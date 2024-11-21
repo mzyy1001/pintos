@@ -231,7 +231,7 @@ process_exit (void)
   }
 
   if (thread_current()->executable_file) {
-    file_allow_write(thread_current()->executable_file);
+    synched_file_allow_write(thread_current()->executable_file);
     file_close(thread_current()->executable_file);
     cur->executable_file = NULL;
   }
@@ -358,15 +358,13 @@ load (void *args_, const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
-  acquire_filesys();
-  file = filesys_open (file_name);
-  release_filesys();
+  file = synched_filesys_open (file_name);
   if (file == NULL)
   {
     printf ("load: %s: open failed\n", file_name);
     goto done;
   }
-  file_deny_write(file);
+  synched_file_deny_write(file);
   thread_current()->executable_file = file;
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -454,7 +452,7 @@ load (void *args_, const char *file_name, void (**eip) (void), void **esp)
   if (!success && file != NULL)
   {
     /* Revert deny-write if load fails. */
-    file_allow_write(file);
+    synched_file_allow_write(file);
     file_close(file);
     t->executable_file = NULL;
   }

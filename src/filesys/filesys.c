@@ -74,6 +74,15 @@ filesys_create (const char *name, off_t initial_size)
   return success;
 }
 
+/* Wraps the filesys_create with a semaphore to ensure mutex of filesys. */
+bool 
+synched_filesys_create (const char *name, off_t initial_size) {
+  sema_down(&filesys_mutex);
+  bool result = filesys_create(name, initial_size);
+  sema_up(&filesys_mutex);
+  return result;
+}
+
 /* Opens the file with the given NAME.
    Returns the new file if successful or a null pointer
    otherwise.
@@ -92,6 +101,15 @@ filesys_open (const char *name)
   return file_open (inode);
 }
 
+/* Wraps the filesys_open with a semaphore to ensure mutex of filesys. */
+struct file *
+synched_filesys_open (const char *name) {
+  sema_down(&filesys_mutex);
+  struct file *result = filesys_open(name);
+  sema_up(&filesys_mutex);
+  return result;
+}
+
 /* Deletes the file named NAME.
    Returns true if successful, false on failure.
    Fails if no file named NAME exists,
@@ -104,6 +122,83 @@ filesys_remove (const char *name)
   dir_close (dir); 
 
   return success;
+}
+
+/* Wraps the filesys_remove with a semaphore to ensure mutex of filesys. */
+bool
+synched_filesys_remove (const char *name) {
+  sema_down(&filesys_mutex);
+  bool result = filesys_remove(name);
+  sema_up(&filesys_mutex);
+  return result;
+}
+
+/* Wraps the file_close with a semaphore to ensure mutex of filesys. */
+void
+synched_file_close (struct file *file) {
+  sema_down(&filesys_mutex);
+  file_close(file);
+  sema_up(&filesys_mutex);
+}
+
+/* Wraps the file_read with a semaphore to ensure mutex of filesys. */
+off_t
+synched_file_read (struct file *file, void *buffer, off_t offset) {
+  sema_down(&filesys_mutex);
+  off_t result = file_read(file, buffer, offset);
+  sema_up(&filesys_mutex);
+  return result;
+}
+
+/* Wraps the file_write with a semaphore to ensure mutex of filesys. */
+off_t
+synched_file_write (struct file *file, const void *buffer, off_t offset) {
+  sema_down(&filesys_mutex);
+  off_t result = file_write(file, buffer, offset);
+  sema_up(&filesys_mutex);
+  return result;
+}
+
+/* Wraps the file_seek with a semaphore to ensure mutex of filesys. */
+void
+synched_file_seek (struct file *file, off_t offset) {
+  sema_down(&filesys_mutex);
+  file_seek(file, offset);
+  sema_up(&filesys_mutex);
+}
+
+/* Wraps the file_tell with a semaphore to ensure mutex of filesys. */
+off_t
+synched_file_tell (struct file *file) {
+  sema_down(&filesys_mutex);
+  off_t result = file_tell(file);
+  sema_up(&filesys_mutex);
+  return result;
+}
+
+/* Wraps the file_length with a semaphore to ensure mutex of filesys. */
+off_t
+synched_file_length (struct file *file) {
+  sema_down(&filesys_mutex);
+  off_t result = file_length(file);
+  sema_up(&filesys_mutex);
+  return result;
+}
+
+/* Wraps the file_deny_write with a semaphore to ensure mutex of filesys. */
+void
+synched_file_deny_write (struct file *file) {
+  sema_down(&filesys_mutex);
+  file_deny_write(file);
+  sema_up(&filesys_mutex);
+}
+
+/* Wraps the file_allow_write with a semaphore to ensure mutex of filesys. */
+void
+synched_file_allow_write (struct file *file) {
+  sema_down(&filesys_mutex);
+  file_allow_write(file);
+  sema_up(&filesys_mutex);
 }
 
 /* Formats the file system. */

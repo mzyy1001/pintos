@@ -205,9 +205,7 @@ create (struct intr_frame *f) {
   if (initial_size > INT_MAX || !verify_string(file_name)) {
     exit(BAD_ARGUMENTS);
   }
-  acquire_filesys();
-  f->eax = (int32_t) filesys_create(file_name, (off_t) initial_size);
-  release_filesys();
+  f->eax = (int32_t) synched_filesys_create(file_name, (off_t) initial_size);
 }
 
 /* Deletes the file called file. Returns whether it was successfully deleted.
@@ -221,9 +219,7 @@ remove (struct intr_frame *f) {
     f->eax = (int32_t) NOTHING;
     return;
   }
-  acquire_filesys();
-  f->eax = (int32_t) filesys_remove(file_name);
-  release_filesys();
+  f->eax = (int32_t) synched_filesys_remove(file_name);
 }
 
 /* Opens the file called file. Returns a nonnegative integer handle called a
@@ -243,9 +239,7 @@ open (struct intr_frame *f) {
     f->eax = (int32_t) BAD_ARGUMENTS;
     return;
   }
-  acquire_filesys();
-  struct file *file = filesys_open(file_name);
-  release_filesys();
+  struct file *file = synched_filesys_open(file_name);
   if (file == NULL) {
     f->eax = (int32_t) FUNCTION_ERROR;
     return;
@@ -265,9 +259,7 @@ filesize (struct intr_frame *f) {
     f->eax = (int32_t) BAD_ARGUMENTS;
     return;
   }
-  acquire_filesys();
-  f->eax = (int32_t) file_length(file);
-  release_filesys();
+  f->eax = (int32_t) synched_file_length(file);
 }
 
 /* Reads size bytes from the file open as fd into buffer. Returns the number
@@ -301,9 +293,7 @@ read (struct intr_frame *f) {
     f->eax = (int32_t) BAD_ARGUMENTS;
     return;
   }
-  acquire_filesys();
-  f->eax = (int32_t) file_read(file, buffer, size);
-  release_filesys();
+  f->eax = (int32_t) synched_file_read(file, buffer, size);
   return;
 }
 
@@ -356,9 +346,7 @@ write (struct intr_frame *f) {
       return;
 
     }
-    acquire_filesys();
-    bytes_written = file_write(file, buffer, size);
-    release_filesys();
+    bytes_written = synched_file_write(file, buffer, size);
     if (bytes_written < NOTHING) {
       bytes_written = NOTHING;
     }
@@ -385,9 +373,7 @@ seek (struct intr_frame *f) {
   if (file == NULL) {
     return;
   }
-  acquire_filesys();
-  file_seek(file, (off_t) position);
-  release_filesys();
+  synched_file_seek(file, (off_t) position);
 }
 
 /* Returns the position of the next byte to be read or written in open file fd,
@@ -404,9 +390,7 @@ tell (struct intr_frame *f) {
     f->eax = (int32_t) BAD_ARGUMENTS;
     return;
   }
-  acquire_filesys();
-  f->eax = (int32_t) file_tell(file);
-  release_filesys();
+  f->eax = (int32_t) synched_file_tell(file);
 }
 
 /* Closes file descriptor fd. Exiting or terminating a process implicitly

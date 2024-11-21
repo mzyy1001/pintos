@@ -422,9 +422,7 @@ thread_tid (void)
 static void
 fd_hash_elem_free(struct hash_elem *e, void *aux UNUSED) {
   struct file_descriptor_element * elem_to_free = hash_entry(e, struct file_descriptor_element, hash_elem);
-  acquire_filesys();
-  file_close(elem_to_free->file_pointer);
-  release_filesys();
+  synched_file_close(elem_to_free->file_pointer);
   free(elem_to_free);
 }
 
@@ -731,9 +729,7 @@ fd_table_add (struct file* file) {
   /* Unable to allocate memory, operation fails. */
   // TODO(Consider terminating the process in such a case)
   if (new_fd == NULL) {
-    acquire_filesys();
-    file_close(file);
-    release_filesys();
+    synched_file_close(file);
     return -1;
   }
   new_fd->fd = thread_get_fd();
@@ -745,9 +741,7 @@ fd_table_add (struct file* file) {
   /* Equivilent element already in table. Should never occur as thread_get_fd 
   is strictly monotone increasing and int limit is very large. */
   if (added_elem != NULL) {
-    acquire_filesys();
-    file_close(file);
-    release_filesys();
+    synched_file_close(file);
     free (new_fd);
     return -1;
   }
