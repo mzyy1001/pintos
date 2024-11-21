@@ -8,27 +8,32 @@
 #include "pagedir.h"
 #include "filesys/file.h"
 
+/* Number of syscalls implemented that the syscall handler can call. */
 #define NUMBER_OF_SYSCALLS 13
-
 /* Exit code when given bad (invalid or out of range) arguments. */
 #define BAD_ARGUMENTS (-1)
-
-/* Syscall exit code when an operation with the fd table errors. */
-#define FD_TABLE_ERROR (-1)
-
+/* Syscall exit code when an operation with the parent_child struct fails. */
+#define PARENT_CHILD_ERROR (-1)
+/* Syscall exit code when a (filesys/process)_{name} function doesn't run as intended. */
+#define FUNCTION_ERROR (-1)
+/* Syscall exit code when a memory allocation fails. */
+#define MEMORY_ALLOCATION_ERROR (-1)
 /* Max string argument length to prevent incorrectly structured strings infinite looping. */
 #define MAX_STRING_LENGTH (2 << 20)
-
 /* Syscall return code for return that 0 of whatever was expected to be done was done. */
 #define NOTHING 0
+/* The fd value that refers to the console (for output). */
+#define CONSOLE_FD 1
+/* The fd value that refers to the keyboards (for input). */
+#define KEYBOARD_FD 0
 
 /* Process identifier. */
 typedef int pid_t;
-
-static void syscall_handler (struct intr_frame *);
+/* Syscall function. */
+typedef void (syscall_t)(struct intr_frame *);
 
 /* Used to ensure safe memory access by verifying a pointer pre-dereference.
-TODO(Should it be called with interrupts off, does it need mutex aquire or will it be fine?) */
+TODO(Should it be called with interrupts off, does it need mutex acquire or will it be fine?) */
 static bool
 verify (void *vaddr) {
   if (vaddr != NULL && is_user_vaddr(vaddr)) {
@@ -43,8 +48,7 @@ verify (void *vaddr) {
 static int
 extract_arg_n(int *stack_pointer, int arg_num) {
   if (verify(stack_pointer + arg_num)) {
-    // TODO(MAY BE UNDEFINED OP FIX THIS)
-    return *(stack_pointer + arg_num);
+    return stack_pointer[arg_num];
   }
   else {
     thread_exit ();
@@ -101,7 +105,7 @@ verify_buffer (const void *buffer, unsigned size) {
       return false;
     }
     ptr ++;
-    //TODO(Replace with pagesized jumps (or end) later)
+    //TODO(Replace with page sized jumps (or end) later)
   }
   return true;
 }
@@ -109,7 +113,7 @@ verify_buffer (const void *buffer, unsigned size) {
 /* Terminates PintOS. This should be seldom used, because you lose some
 information about possible deadlock situations, etc. */
 static void
-halt (struct intr_frame *UNUSED) {
+halt (struct intr_frame *aux UNUSED) {
   shutdown_power_off();
 }
 
@@ -138,15 +142,15 @@ static void
 exec (struct intr_frame *f) {
   const char *cmd_line = (char *) extract_arg_1((int *) f->esp);
   // TODO(Naive cmd_line length check may be improvable)
-  if (!verify_string(cmd_line) || strlen(cmd_line) >= PGSIZE) {
-    f ->eax = (int32_t) -1;
+  if (!verify_string(cmd_line) || strlen(cmd_line) > PGSIZE) {
+    f ->eax = (int32_t) BAD_ARGUMENTS;
     return;
   }
 
   /* Make a copy of the command line. */
   char *cmd_copy = palloc_get_page(0);
   if (cmd_copy == NULL) {
-    f ->eax = (int32_t) -1;
+    f ->eax = (int32_t) MEMORY_ALLOCATION_ERROR;
     return;
   }
   strlcpy(cmd_copy, cmd_line, PGSIZE);
@@ -155,7 +159,7 @@ exec (struct intr_frame *f) {
   tid_t tid = process_execute(cmd_copy);
   if (tid == TID_ERROR) {
     palloc_free_page(cmd_copy);
-    f ->eax = (int32_t) -1;
+    f ->eax = (int32_t) FUNCTION_ERROR;
     return;
   }
 
@@ -164,16 +168,16 @@ exec (struct intr_frame *f) {
   struct parent_child *child_pach = get_child_pach(tid);
   if (child_pach == NULL) {
     palloc_free_page(cmd_copy);
-    f ->eax = (int32_t) -1;
+    f ->eax = (int32_t) PARENT_CHILD_ERROR;
     return;
   }
 
-  /* Wait for the child to finish loading (succesfully or not). */
+  /* Wait for the child to finish loading (successfully or not). */
   sema_down(&child_pach->child_loaded); 
 
   /* Check if the child process loaded successfully. */
   if (!child_pach->child_load_success) {
-    tid = -1;
+    tid = PARENT_CHILD_ERROR;
   }
 
   /* Clean up the command line copy. */
@@ -211,7 +215,7 @@ remove (struct intr_frame *f) {
   const char *file_name = (char *) extract_arg_1((int *) f->esp);
   /* Replace 2nd & 3rd condition with string validate function */
   if (!verify_string(file_name) || *file_name == '\0') {
-    f->eax = (int32_t) false;
+    f->eax = (int32_t) NOTHING;
     return;
   }
   acquire_filesys();
@@ -240,7 +244,7 @@ open (struct intr_frame *f) {
   struct file *file = filesys_open(file_name);
   release_filesys();
   if (file == NULL) {
-    f->eax = (int32_t) -1;
+    f->eax = (int32_t) FUNCTION_ERROR;
     return;
   }
   f->eax = (int32_t) fd_table_add(file);
@@ -253,10 +257,9 @@ filesize (struct intr_frame *f) {
   /* May need to add an fd check here too. */
   struct file *file = fd_table_get(fd);
   // TODO(May want to change this behaviour to kill the program or something)
-  /* No matching file found. */
-  /* may need to add a validate fd function to ensure fd isn't 0 or 1, and that it is less than some MAX_FD. */
+  /* Table get fails -> bad fd. */
   if (file == NULL) {
-    f->eax = (int32_t) FD_TABLE_ERROR;
+    f->eax = (int32_t) BAD_ARGUMENTS;
     return;
   }
   acquire_filesys();
@@ -277,31 +280,28 @@ read (struct intr_frame *f) {
     exit(BAD_ARGUMENTS);
   }
   /* TODO(May need to have mutex acquiring in fd 0 reading. */
-  if (fd == 0) {
-    unsigned bytes_read = 0;
+  if (fd == KEYBOARD_FD) {
+    unsigned bytes_read = NOTHING;
     char *buf = buffer;
     acquire_filesys();
-    for (unsigned i = 0; i < size; i++) {
+    for (int i = 0; i < size; i++) {
       buf[i] = input_getc();
       bytes_read++;
     }
     release_filesys();
     f->eax = (int32_t) bytes_read;
     return;
-  } else if (fd >= FD_MIN_VALUE && fd < MAX_FILES) {
-    struct file *file = fd_table_get(fd);
-    /* FD table fails on file descriptor. */
-    if (file == NULL) {
-      f->eax = (int32_t) FD_TABLE_ERROR;
-      return;
-    }
-    acquire_filesys();
-    f->eax = (int32_t) file_read(file, buffer, size);
-    release_filesys();
+  }
+  struct file *file = fd_table_get(fd);
+  /* Table get fails -> bad fd. */
+  if (file == NULL) {
+    f->eax = (int32_t) BAD_ARGUMENTS;
     return;
   }
-  /* Invalid file descriptor. */
-  f->eax = (int32_t) BAD_ARGUMENTS;
+  acquire_filesys();
+  f->eax = (int32_t) file_read(file, buffer, size);
+  release_filesys();
+  return;
 }
 
 /* Writes size bytes from buffer to the open file fd. Returns the number of
@@ -324,7 +324,7 @@ write (struct intr_frame *f) {
   } 
   /* TODO(May need to have mutex acquiring in fd 1 writing. */
   int bytes_written = 0;
-  if (fd == 1) {
+  if (fd == CONSOLE_FD) {
     unsigned remaining = size;
     const char *buf = buffer;
     acquire_filesys();
@@ -343,9 +343,9 @@ write (struct intr_frame *f) {
   } else {
     /* Write to a regular file. */
     struct file *file = fd_table_get(fd);
-    /* FD table fails on file descriptor. */
+    /* Table get fails -> bad fd. */
     if (file == NULL) {
-      f->eax = (int32_t) FD_TABLE_ERROR;
+      f->eax = (int32_t) BAD_ARGUMENTS;
       return;
     }
     if (is_deny_write(file)) {
@@ -356,18 +356,11 @@ write (struct intr_frame *f) {
     acquire_filesys();
     bytes_written = file_write(file, buffer, size);
     release_filesys();
-    if (bytes_written < 0) {
+    if (bytes_written < NOTHING) {
       bytes_written = NOTHING;
     }
   }
   f->eax = (int32_t) bytes_written;
-/* Writing past end-of-file would normally extend the file, but file growth is not implemented
-by the basic file system. The expected behaviour is to write as many bytes as possible up to
-end-of-file and return the actual number written, or 0 if no bytes could be written at all.
-Fd 1 writes to the console. Your code to write to the console should write all of buffer in
-one call to putbuf(), at least as long as size is not bigger than a few hundred bytes. (It is
-reasonable to break up larger buffers.) Otherwise, lines of text output by different processes
-may end up interleaved on the console, confusing both human readers and our grading scripts.*/
 }
 
 /* Changes the next byte to be read or written in open file fd to position,
@@ -385,7 +378,7 @@ seek (struct intr_frame *f) {
   /* Locate and verify the file matching fd. */
   struct file *file = fd_table_get(fd);
   // TODO(May want to change this behaviour e.g. to kill the program)
-  /* No matching file found. */
+  /* Table get fails -> bad fd. */
   if (file == NULL) {
     return;
   }
@@ -403,9 +396,9 @@ tell (struct intr_frame *f) {
   // TODO(Very similar to filesize, may be refactorable to avoid duplication)
   struct file *file = fd_table_get(fd);
   // TODO(May want to change this behaviour to say kill the program or something)
-  /* No matching file found. */
+  /* Table get fails -> bad fd. */
   if (file == NULL) {
-    f->eax = (int32_t) FD_TABLE_ERROR;
+    f->eax = (int32_t) BAD_ARGUMENTS;
     return;
   }
   acquire_filesys();
@@ -425,13 +418,7 @@ close (struct intr_frame *f) {
   release_filesys();
 }
 
-void
-syscall_init (void) 
-{
-  intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
-}
-
-static void (*syscalls[NUMBER_OF_SYSCALLS]) (struct intr_frame *) = {
+static syscall_t *syscalls[NUMBER_OF_SYSCALLS] = {
   &halt, &sys_exit, &exec, &wait, &create, &remove, &open, &filesize, &read, &write, &seek, &tell, &close
 };
 
@@ -450,4 +437,10 @@ syscall_handler (struct intr_frame *f)
   }
   /* Invalid pointer terminates user process. */
   exit (BAD_ARGUMENTS);
+}
+
+void
+syscall_init (void)
+{
+  intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
