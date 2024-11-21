@@ -683,10 +683,10 @@ setup_stack (void **esp, void *args_, char *file_name)
       pagedir_clear_page(thread_current()->pagedir, upage);
       kpage = NULL;
     }
-    if (argv != NULL)
-    {
-      free(argv);
-    }
+  }
+  if (argv != NULL)
+  {
+    free(argv);
   }
   return success;
 }
