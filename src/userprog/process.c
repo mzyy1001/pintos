@@ -47,18 +47,18 @@ process_execute (const char *arguments)
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   args_copy  = palloc_get_page (0);
-  if (args_copy  == NULL){
+  args_copy_two  = palloc_get_page (0);
+  if (args_copy == NULL || args_copy_two == NULL) {
+    if (args_copy) palloc_free_page(args_copy);
+    if (args_copy_two) palloc_free_page(args_copy_two);
     return TID_ERROR;
   }
-
   strlcpy (args_copy , arguments, PGSIZE);
-  args_copy_two  = palloc_get_page (0);
-  if (args_copy_two  == NULL)
-    return TID_ERROR;
   strlcpy (args_copy_two , arguments, PGSIZE);
   /* Parse the file name*/
   char *file_name = strtok_r(args_copy, " ", &save_ptr);
   if (file_name == NULL) {
+    palloc_free_page(args_copy_two);
     palloc_free_page(args_copy);
     return TID_ERROR;
   }
@@ -194,23 +194,23 @@ process_exit (void)
 
   struct parent_child *parent_pach = cur->parent;
 
-  sema_down(&parent_pach->sema);
-  printf("%s: exit(%d)\n", cur->name, parent_pach->child_exit_code);
+  if (parent_pach != NULL)
+  {
+    sema_down(&parent_pach->sema);
+    printf("%s: exit(%d)\n", cur->name, parent_pach->child_exit_code);
 
-
-  //if parent has exited
-  if (parent_pach->parent_exit) {
-    //free this parent_child struct
-    free(parent_pach);
-  } else {
-    //no need to remove child from parent's children list
-    parent_pach->child_exit = true;
-
-    sema_up(&parent_pach->waiting);
-    sema_up(&parent_pach->sema);
+    if (parent_pach->parent_exit)
+    {
+      free(parent_pach);
+      parent_pach = NULL;
+    }
+    else
+    {
+      parent_pach->child_exit = true;
+      sema_up(&parent_pach->waiting);
+      sema_up(&parent_pach->sema);
+    }
   }
-
-
 
   // Traverse the list of children, letting each child know it has exited (e.g. parent_exit = true). use the sema
   struct list *children = &cur->children;
@@ -227,10 +227,15 @@ process_exit (void)
       child_pach->parent_exit = true;
       //No need to up waiting
       sema_up(&child_pach->sema);
+      e = list_next(e); 
     }
   }
 
-
+  if (thread_current()->executable_file) {
+    file_allow_write(thread_current()->executable_file);
+    file_close(thread_current()->executable_file);
+    cur->executable_file = NULL;
+  }
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -362,7 +367,8 @@ load (void *args_, const char *file_name, void (**eip) (void), void **esp)
     printf ("load: %s: open failed\n", file_name);
     goto done;
   }
-
+  file_deny_write(file);
+  thread_current()->executable_file = file;
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
       || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
@@ -442,12 +448,17 @@ load (void *args_, const char *file_name, void (**eip) (void), void **esp)
   }
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
-
   success = true;
 
   done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  if (!success && file != NULL)
+  {
+    /* Revert deny-write if load fails. */
+    file_allow_write(file);
+    file_close(file);
+    t->executable_file = NULL;
+  }
   return success;
 }
 
@@ -582,7 +593,13 @@ setup_stack (void **esp, void *args_, char *file_name)
   ASSERT(file_name != NULL);
   uint8_t *kpage;
   bool success = false;
-
+  char **argv = malloc(MAX_ARGS * sizeof(char *));
+  if (argv == NULL)
+  {
+    success = false;
+    goto done;
+  }
+  
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL)
   {
@@ -593,15 +610,27 @@ setup_stack (void **esp, void *args_, char *file_name)
 
       // Push arguments onto the stack
       char *args = args_;
-      char *argv[32];
+      size_t args_size = 0;
       int argc = 0;
       char *arg = strtok_r(args, " ", &save_ptr);
       while (arg != NULL)
       {
+        size_t arg_len = strlen(arg) + 1;
         *esp -= strlen(arg) + 1;
-        CHECK_STACK_OVERFLOW(*esp);
+        
+        if (argc >= MAX_ARGS) {
+          success = false;
+          goto done;
+        }
+        args_size += arg_len + ((uintptr_t)(*esp) % 4);
+        if ((uint8_t *)*esp < (uint8_t *)PHYS_BASE - PGSIZE ||
+            *esp < (args_size + argc * sizeof(char *) + sizeof(char **) + sizeof(int) + sizeof(void *))) {
+          success = false;
+          goto done;
+        }
         memcpy(*esp, arg, strlen(arg) + 1);
         argv[argc++] = *esp;
+        
         arg = strtok_r(NULL, " ", &save_ptr);
       }
       // Word-align the stack
@@ -636,13 +665,26 @@ setup_stack (void **esp, void *args_, char *file_name)
     }
     else
     {
+      printf("setup_stack: Cleaning up stack page at %p\n", kpage);
       palloc_free_page(kpage);
+      kpage = NULL;
+      goto done;
     }
   }
   done:
   if (!success && kpage != NULL)
   {
-    palloc_free_page(kpage);
+    if (kpage != NULL)
+    {
+      palloc_free_page(kpage);
+      void *upage = ((uint8_t *)PHYS_BASE) - PGSIZE;
+      pagedir_clear_page(thread_current()->pagedir, upage);
+      kpage = NULL;
+    }
+    if (argv != NULL)
+    {
+      free(argv);
+    }
   }
   return success;
 }

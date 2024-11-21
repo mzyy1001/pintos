@@ -1,5 +1,6 @@
 #ifndef USERPROG_PROCESS_H
 #define USERPROG_PROCESS_H
+#define MAX_ARGS 32
 
 #include "threads/thread.h"
 
