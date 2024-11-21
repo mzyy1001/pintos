@@ -38,39 +38,40 @@ struct parent_child *get_child_pach(tid_t c_tid);
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
 tid_t
-process_execute (const char *arguments)
+process_execute(const char *arguments)
 {
-  char *args_copy, *args_copy_two;
+  char *args_copy;
   tid_t tid;
   char *save_ptr;
 
-  /* Make a copy of FILE_NAME.
-     Otherwise there's a race between the caller and load(). */
-  args_copy  = palloc_get_page (0);
-  args_copy_two  = palloc_get_page (0);
-  if (args_copy == NULL || args_copy_two == NULL) {
-    if (args_copy) palloc_free_page(args_copy);
-    if (args_copy_two) palloc_free_page(args_copy_two);
+  /* Make a single copy of arguments to avoid race conditions. */
+  args_copy = palloc_get_page(0);
+  if (args_copy == NULL) {
     return TID_ERROR;
   }
-  strlcpy (args_copy , arguments, PGSIZE);
-  strlcpy (args_copy_two , arguments, PGSIZE);
-  /* Parse the file name*/
+  strlcpy(args_copy, arguments, PGSIZE);
+
+  /* Parse the file name and store it independently using malloc. */
   char *file_name = strtok_r(args_copy, " ", &save_ptr);
   if (file_name == NULL) {
-    palloc_free_page(args_copy_two);
     palloc_free_page(args_copy);
     return TID_ERROR;
   }
-  /*revert the change of strtok_r to keep args_copy orginally*/
-  strlcpy (args_copy_two , arguments, PGSIZE);
-  /* Create a new thread to execute program. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, args_copy_two );
-  if (tid == TID_ERROR)
-  {
-    palloc_free_page (args_copy );
-    palloc_free_page (args_copy_two );
+  /* Use malloc for saving the file_name independently. */
+  char *file_name_copy = malloc(strlen(file_name) + 1);
+  if (file_name_copy == NULL) {
+    palloc_free_page(args_copy);
+    return TID_ERROR;
   }
+  strlcpy(file_name_copy, file_name, strlen(file_name) + 1);
+  strlcpy(args_copy, arguments, PGSIZE);
+  /* Create a new thread to execute the program. */
+  tid = thread_create(file_name_copy, PRI_DEFAULT, start_process, args_copy);
+  if (tid == TID_ERROR) {
+    free(file_name_copy); // Free the allocated memory on failure
+    palloc_free_page(args_copy); // Free the copied arguments
+  }
+
   return tid;
 }
 
