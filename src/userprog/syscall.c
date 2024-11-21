@@ -30,6 +30,8 @@
 /* The fd value that refers to the keyboards (for input). */
 #define KEYBOARD_FD 0
 
+
+static void exit (int status);
 /* Process identifier. */
 typedef int pid_t;
 /* Syscall function. */
@@ -38,13 +40,11 @@ typedef void (syscall_t)(struct intr_frame *);
 /* Used to ensure safe memory access by verifying a pointer pre-dereference.
 TODO(Should it be called with interrupts off, does it need mutex acquire or will it be fine?) */
 static bool
-verify (void *vaddr) {
-  if (vaddr != NULL && is_user_vaddr(vaddr)) {
-    if (pagedir_get_page(thread_current()->pagedir, vaddr) != NULL){
-      return true;
-    }
+verify(void *vaddr) {
+  if (vaddr == NULL || !is_user_vaddr(vaddr) || pagedir_get_page(thread_current()->pagedir, vaddr) == NULL) {
+    exit(BAD_ARGUMENTS);
   }
-  return false;
+  return true;
 }
 
 /* Extract a single argument and return it, not moving the pointer. */
@@ -94,7 +94,8 @@ verify_string (const char *str) {
   }
 
   /* Verify the final byte. */ 
-  return verify((void *) ptr);
+  verify((void *)ptr);
+  return true;
 }
 
 static bool
@@ -426,18 +427,16 @@ static syscall_t *syscalls[NUMBER_OF_SYSCALLS] = {
 static void
 syscall_handler (struct intr_frame *f)
 {
-  // printf ("system call!\n");
-  /* Match to the right handler. */
-  // TODO(Ensure everything is synced as it should be)
-  if (verify(f->esp)) {
-    int *stack_pointer = f -> esp;
-    if (*stack_pointer < NUMBER_OF_SYSCALLS) {
-      syscalls[*stack_pointer](f);
-      return;
-    }
+  if (!verify(f->esp)) {
+    exit(BAD_ARGUMENTS); // Terminate process if esp is invalid
   }
-  /* Invalid pointer terminates user process. */
-  exit (BAD_ARGUMENTS);
+
+  int *stack_pointer = f->esp;
+  if (*stack_pointer < 0 || *stack_pointer >= NUMBER_OF_SYSCALLS) {
+    exit(BAD_ARGUMENTS); // Terminate process for invalid syscall number
+  }
+
+  syscalls[*stack_pointer](f);
 }
 
 void

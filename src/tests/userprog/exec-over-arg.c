@@ -1,4 +1,10 @@
-/* Tests argument passing stack overflow is handled for a single over-long argument. */
+/* Tests argument passing stack overflow is handled for a single over-long argument. 
+   The process arguments, and their pointers, will not fit onto the child process's stack, unless stack growth is implemented for argument passing.
+   It is acceptable for the child process to report a load failure, to abort during argument passing, or to grow the stack to support the arguments.
+   
+   In the latter case, only the first 1013 characters of the first argument will be printed, due to size limitations on the output buffer used by the msg function.
+   This behaviour is, however, entirely optional (even in Task 3).
+*/
 
 #include <syscall.h>
 #include "tests/lib.h"

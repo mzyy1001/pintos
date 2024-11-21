@@ -42,7 +42,7 @@ test_mlfqs_block (void)
 
   msg ("Main thread releasing lock.");
   lock_release (&lock);
-  thread_yield();
+
   msg ("Block thread should have already acquired lock.");
 }
 
