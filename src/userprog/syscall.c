@@ -16,6 +16,12 @@
 /* Syscall exit code when an operation with the fd table errors. */
 #define FD_TABLE_ERROR (-1)
 
+/* Max string argument length to prevent incorrectly structured strings infinite looping. */
+#define MAX_STRING_LENGTH (2 << 20)
+
+/* Syscall return code for return that 0 of whatever was expected to be done was done. */
+#define NOTHING 0
+
 /* Process identifier. */
 typedef int pid_t;
 
@@ -52,6 +58,54 @@ extract_arg_n(int *stack_pointer, int arg_num) {
 /* Extract the third argument and return it, not moving the pointer. */
 #define extract_arg_3(stack_pointer) (extract_arg_n(stack_pointer, 3))
 
+/* This function ensures all parts of a string are verified. */
+static bool
+verify_string (const char *str) {
+  const char *ptr = str;
+  int byte_count = 0;
+
+  /* Verify the first byte. */
+  if (!verify((void *) ptr)) {
+    return false;
+  }
+
+  while (*ptr != '\0') {
+    ptr++;
+    byte_count++;
+
+    /* Prevent infinite looping using the max string length. */
+    if (byte_count > MAX_STRING_LENGTH) {
+      return false;
+    }
+
+    /* Only need to verify if crossing into a new page. */
+    if ((uint32_t) ptr % PGSIZE == 0) {
+      if (!verify((void *) ptr)) {
+        return false;
+      }
+    }
+  }
+
+  /* Verify the final byte. */ 
+  return verify((void *) ptr);
+}
+
+static bool
+verify_buffer (const void *buffer, unsigned size) {
+  const uint8_t *ptr = (const uint8_t *) buffer;
+  const uint8_t *end = ptr + size;
+
+  /* Verify the necessary pointers between ptr and end. */
+  while (ptr < end) {
+    if (!verify((void *) ptr)) {
+      return false;
+    }
+    ptr ++;
+    //TODO(Replace with pagesized jumps (or end) later)
+  }
+  return true;
+}
+
 /* Terminates PintOS. This should be seldom used, because you lose some
 information about possible deadlock situations, etc. */
 static void
@@ -80,49 +134,51 @@ sys_exit (struct intr_frame *f) {
 
 /* Runs the executable whose name is given in cmd line, passing any given
 arguments, and returns the new process’s program id (pid). */
-pid_t
-exec(const char *cmd_line)
-{
-    if (cmd_line == NULL 
-    || !is_user_vaddr(cmd_line) 
-    || pagedir_get_page(thread_current()->pagedir, cmd_line) == NULL
-    || strlen(cmd_line) >= PGSIZE) {
-        return -1;
-    }
+static void
+exec (struct intr_frame *f) {
+  const char *cmd_line = (char *) extract_arg_1((int *) f->esp);
+  // TODO(Naive cmd_line length check may be improvable)
+  if (!verify_string(cmd_line) || strlen(cmd_line) >= PGSIZE) {
+    f ->eax = (int32_t) -1;
+    return;
+  }
 
-    /* Make a copy of the command line. */
-    char *cmd_copy = palloc_get_page(0);
-    if (cmd_copy == NULL) {
-        return -1;
-    }
-    strlcpy(cmd_copy, cmd_line, PGSIZE);
+  /* Make a copy of the command line. */
+  char *cmd_copy = palloc_get_page(0);
+  if (cmd_copy == NULL) {
+    f ->eax = (int32_t) -1;
+    return;
+  }
+  strlcpy(cmd_copy, cmd_line, PGSIZE);
 
-    /* Create the new process. */
-    tid_t tid = process_execute(cmd_copy);
-    if (tid == TID_ERROR) {
-        palloc_free_page(cmd_copy);
-        return -1;
-    }
-
-    /* Find the corresponding intermediary (parent_child) structure corresponding to 
-      a child's tid. */
-    struct parent_child *child_pach = get_child_pach(tid);
-    if (child_pach == NULL) {
-        palloc_free_page(cmd_copy);
-        return -1;
-    }
-
-    /* Wait for the child to finish loading (succesfully or not). */
-    sema_down(&child_pach->child_loaded); 
-
-    /* Check if the child process loaded successfully. */
-    if (!child_pach->child_load_success) {
-        tid = -1;
-    }
-
-    /* Clean up the command line copy. */
+  /* Create the new process. */
+  tid_t tid = process_execute(cmd_copy);
+  if (tid == TID_ERROR) {
     palloc_free_page(cmd_copy);
-    return tid;
+    f ->eax = (int32_t) -1;
+    return;
+  }
+
+  /* Find the corresponding intermediary (parent_child) structure corresponding to 
+    a child's tid. */
+  struct parent_child *child_pach = get_child_pach(tid);
+  if (child_pach == NULL) {
+    palloc_free_page(cmd_copy);
+    f ->eax = (int32_t) -1;
+    return;
+  }
+
+  /* Wait for the child to finish loading (succesfully or not). */
+  sema_down(&child_pach->child_loaded); 
+
+  /* Check if the child process loaded successfully. */
+  if (!child_pach->child_load_success) {
+    tid = -1;
+  }
+
+  /* Clean up the command line copy. */
+  palloc_free_page(cmd_copy);
+  f ->eax = (int32_t) tid;
 }
 
 static void
@@ -154,7 +210,7 @@ static void
 remove (struct intr_frame *f) {
   const char *file_name = (char *) extract_arg_1((int *) f->esp);
   /* Replace 2nd & 3rd condition with string validate function */
-  if (!verify(file_name) || *file_name == '\0') {
+  if (!verify_string(file_name) || *file_name == '\0') {
     f->eax = (int32_t) false;
     return;
   }
@@ -173,7 +229,7 @@ static void
 open (struct intr_frame *f) {
   const char *file_name = (char *) extract_arg_1((int *) f->esp);
   /* Replace condition with string validate function */
-  if (!verify(file_name)) {
+  if (!verify_string(file_name)) {
     exit(BAD_ARGUMENTS);
   }
   if (*file_name == '\0') {
@@ -217,20 +273,22 @@ read (struct intr_frame *f) {
   void *buffer = (void *) extract_arg_2((int *) f->esp);
   unsigned size = (unsigned) extract_arg_3 ((int *) f->esp);
   /* Check if buffer is valid. */
-  if (!verify(buffer)) {
+  if (!verify_buffer(buffer, size)) {
     exit(BAD_ARGUMENTS);
   }
   /* TODO(May need to have mutex acquiring in fd 0 reading. */
   if (fd == 0) {
     unsigned bytes_read = 0;
     char *buf = buffer;
+    acquire_filesys();
     for (unsigned i = 0; i < size; i++) {
       buf[i] = input_getc();
       bytes_read++;
     }
+    release_filesys();
     f->eax = (int32_t) bytes_read;
     return;
-  } else if (fd > 1 && fd < MAX_FILES) {
+  } else if (fd >= FD_MIN_VALUE && fd < MAX_FILES) {
     struct file *file = fd_table_get(fd);
     /* FD table fails on file descriptor. */
     if (file == NULL) {
@@ -255,25 +313,29 @@ write (struct intr_frame *f) {
   const void *buffer = (void *) extract_arg_2((int *) f->esp);
   unsigned size = (unsigned) extract_arg_3 ((int *) f->esp);
   /* Check if buffer is invalid. */
-  if (!verify(buffer)) {
+  if (!verify_buffer(buffer, size)) {
     exit(BAD_ARGUMENTS);
   }
   /* Check size exits, may be unnecessary. */
-  if (size == 0) {
-    return 0;
+  if (size == NOTHING) {
+    f->eax = NOTHING;
+    return;
+
   } 
   /* TODO(May need to have mutex acquiring in fd 1 writing. */
   int bytes_written = 0;
   if (fd == 1) {
-    // If size is large, break it into chunks to avoid interleaving.
     unsigned remaining = size;
     const char *buf = buffer;
-    while (remaining > 300) {  // Write in chunks of 300 bytes.
+    acquire_filesys();
+    /* Write in 300 byte chunks. */
+    while (remaining > 300) {
         putbuf(buf, 300);
         buf += 300;
         remaining -= 300;
         bytes_written += 300;
     }
+    release_filesys();
     if (remaining > 0) {
         putbuf(buf, remaining);
         bytes_written += remaining;
@@ -287,13 +349,15 @@ write (struct intr_frame *f) {
       return;
     }
     if (is_deny_write(file)) {
-      return 0;
+      f->eax = NOTHING;
+      return;
+
     }
     acquire_filesys();
     bytes_written = file_write(file, buffer, size);
     release_filesys();
     if (bytes_written < 0) {
-      bytes_written = 0;
+      bytes_written = NOTHING;
     }
   }
   f->eax = (int32_t) bytes_written;
@@ -382,7 +446,7 @@ syscall_handler (struct intr_frame *f)
     if (*stack_pointer < NUMBER_OF_SYSCALLS) {
       syscalls[*stack_pointer](f);
       return;
-    }Z
+    }
   }
   /* Invalid pointer terminates user process. */
   exit (BAD_ARGUMENTS);

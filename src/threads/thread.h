@@ -45,6 +45,9 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+/* Starting value for file descriptors, avoids 1 & 0 which are reserved. */
+#define FD_MIN_VALUE 2
+
 /* An entry into the file descriptor table. */
 struct file_descriptor_element{
   int fd;
