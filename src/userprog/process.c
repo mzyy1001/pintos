@@ -23,7 +23,7 @@
 static thread_func start_process NO_RETURN;
 static bool load (void *args_, const char *cmdline, void (**eip) (void), void **esp);
 static bool setup_stack (void **esp, void *args_, char *file_name);
-struct parent_child *get_child_pach(tid_t child_tid);
+struct parent_child *get_child_pach(tid_t c_tid);
 
 #define CHECK_STACK_OVERFLOW(esp) \
   do { \
@@ -129,14 +129,14 @@ start_process (void *args_)
 /* Returns the intermediary structure (parent_child) of the parent's child with 
   child_tid. 
   The actual child thread * can be accessed by get_child_pach(child_tid)->child*/
-struct parent_child *get_child_pach(tid_t child_tid) {
+struct parent_child *get_child_pach(tid_t c_tid) {
   struct list_elem *e;
   struct parent_child *child_pach = NULL;
   struct list *children = &thread_current()->children;
   for (e = list_begin(children); e != list_end(children); e = list_next(e)) {
     child_pach = list_entry(e, struct parent_child, child_elem);
 
-    if (child_pach->child->tid == child_tid) {
+    if (child_pach->child_tid == c_tid) {
       //child found!
       break;
     }
@@ -172,7 +172,9 @@ process_wait (tid_t child_tid)
     return -1;
   }
 
-  /* synchronised modification of child_pach */
+  /* synchronised modification of child_pach->sema.
+  this is not needed, as wait is only used by parent thread.
+  however, we keep it synchronised for future-proofing */ 
   sema_down(&child_pach->sema);
   child_pach->wait = true;
   sema_up(&child_pach->sema);

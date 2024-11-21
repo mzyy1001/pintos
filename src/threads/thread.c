@@ -330,8 +330,7 @@ tid_t
 /* Initialises parent_child struct */
 void init_parent_child(struct thread *child, struct thread *parent) {
   struct parent_child *parent_child = malloc (sizeof(struct parent_child));
-  parent_child->parent = parent;
-  parent_child->child = child;
+  parent_child->child_tid = child->tid;
   parent_child->parent_exit = false;
   parent_child->child_exit = false;
   parent_child->child_exit_code = -1; /* initialised to -1. exit syscall will modify it*/

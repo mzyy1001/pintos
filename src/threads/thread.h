@@ -58,8 +58,7 @@ struct file_descriptor_element{
 /* Used to mediate parent-child pointers */
 struct parent_child
 {
-   const struct thread *parent;
-   const struct thread *child;
+   tid_t child_tid;           /* used in get_child_pach to find child by tid*/
    struct list_elem child_elem;
    bool parent_exit;
    bool child_exit;
