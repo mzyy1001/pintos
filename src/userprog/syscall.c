@@ -80,11 +80,15 @@ sys_exit (struct intr_frame *f) {
 
 /* Runs the executable whose name is given in cmd line, passing any given
 arguments, and returns the new process’s program id (pid). */
-static void
-exec (struct intr_frame *f) {
-  const char *command_line = (char *) extract_arg_1((int *) f->esp);
-  //TODO()
-  f ->eax = (int32_t) -1;
+pid_t
+exec(const char *cmd_line)
+{
+    if (cmd_line == NULL 
+    || !is_user_vaddr(cmd_line) 
+    || pagedir_get_page(thread_current()->pagedir, cmd_line) == NULL
+    || strlen(cmd_line) >= PGSIZE) {
+        return -1;
+    }
 
     /* Make a copy of the command line. */
     char *cmd_copy = palloc_get_page(0);
@@ -256,10 +260,8 @@ write (struct intr_frame *f) {
   }
   /* Check size exits, may be unnecessary. */
   if (size == 0) {
-    f->eax = 0;
-    return;
-  }
-
+    return 0;
+  } 
   /* TODO(May need to have mutex acquiring in fd 1 writing. */
   int bytes_written = 0;
   if (fd == 1) {
@@ -283,6 +285,9 @@ write (struct intr_frame *f) {
     if (file == NULL) {
       f->eax = (int32_t) FD_TABLE_ERROR;
       return;
+    }
+    if (is_deny_write(file)) {
+      return 0;
     }
     acquire_filesys();
     bytes_written = file_write(file, buffer, size);

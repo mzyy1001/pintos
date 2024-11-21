@@ -4,6 +4,7 @@
 #include <string.h>
 #include "threads/init.h"
 #include "threads/pte.h"
+#include <stdio.h>
 #include "threads/palloc.h"
 
 static uint32_t *active_pd (void);
@@ -25,26 +26,34 @@ pagedir_create (void)
 /* Destroys page directory PD, freeing all the pages it
    references. */
 void
-pagedir_destroy (uint32_t *pd) 
+pagedir_destroy(uint32_t *pd) 
 {
   uint32_t *pde;
 
   if (pd == NULL)
     return;
 
-  ASSERT (pd != init_page_dir);
-  for (pde = pd; pde < pd + pd_no (PHYS_BASE); pde++)
-    if (*pde & PTE_P) 
-      {
-        uint32_t *pt = pde_get_pt (*pde);
-        uint32_t *pte;
-        
-        for (pte = pt; pte < pt + PGSIZE / sizeof *pte; pte++)
-          if (*pte & PTE_P) 
-            palloc_free_page (pte_get_page (*pte));
-        palloc_free_page (pt);
+  ASSERT(pd != init_page_dir);
+
+  for (pde = pd; pde < pd + pd_no(PHYS_BASE); pde++) {
+    if (*pde & PTE_P) {  // Check if page directory entry is present
+      uint32_t *pt = pde_get_pt(*pde);  // Get page table
+      uint32_t *pte;
+
+      for (pte = pt; pte < pt + PGSIZE / sizeof(*pte); pte++) {
+        if (*pte & PTE_P) {  // Check if page table entry is present
+          void *page = pte_get_page(*pte);
+          if (page == NULL || !is_kernel_vaddr(page)) {
+            printf("Error: Attempting to free invalid or NULL page at %p\n", page);
+            continue;  // Skip invalid pages
+          }
+          palloc_free_page(page);  // Free the physical page
+        }
       }
-  palloc_free_page (pd);
+      palloc_free_page(pt);  // Free the page table
+    }
+  }
+  palloc_free_page(pd);  // Free the page directory
 }
 
 /* Returns the address of the page table entry for virtual

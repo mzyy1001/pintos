@@ -54,6 +54,8 @@ file_close (struct file *file)
     }
 }
 
+
+
 /* Returns the inode encapsulated by FILE. */
 struct inode *
 file_get_inode (struct file *file) 
@@ -184,4 +186,8 @@ file_hash (struct file *file)
 {
    ASSERT (file != NULL);
    return hash_ptr(file_get_inode(file));
+}
+
+bool is_deny_write(struct file *file) {
+  return file->deny_write;
 }
