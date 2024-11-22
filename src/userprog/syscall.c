@@ -31,6 +31,8 @@ expected to be done/given was done/given. */
 #define NOTHING 0
 /* The fd value that refers to the console (for output). */
 #define CONSOLE_FD 1
+/* The number of bytes put at one time into buffer. */
+#define BUFFER_CHUNK_SIZE 300
 /* The fd value that refers to the keyboards (for input). */
 #define KEYBOARD_FD 0
 
@@ -100,12 +102,13 @@ verify_buffer (const void *buffer, unsigned size) {
   /* Move pointer to next page boundary */
   ptr = (const uint8_t *)(((uintptr_t)ptr + PGSIZE) & ~(PGSIZE - 1));
 
-  /* Iterate through each page boundary */
+  /* Iterate through each page boundary, verifying them. */
   while (ptr < end) {
       verify((void *) ptr);
-      ptr += PGSIZE;  /* Move to the next page boundary */
-  }
 
+      /* Move to the next page boundary. */
+      ptr += PGSIZE;  
+  }
 }
 
 /* Terminates PintOS. This should be seldom used, because you lose some
@@ -186,7 +189,8 @@ static void
 create (struct intr_frame *f) {
   const char *file_name = (char *) EXTRACT_ARG_1((int *) f->esp);
   unsigned initial_size = (unsigned) EXTRACT_ARG_2 ((int *) f->esp);
-  /* Replace 2nd & 3rd condition with string validate function */
+  
+  /* Verify arguments.  */
   verify_string(file_name);
   if (initial_size > INT_MAX) {
     exit_process_with_status(BAD_ARGUMENTS);
@@ -226,7 +230,6 @@ open (struct intr_frame *f) {
   /* Verify arguments. */
   verify_string(file_name);
 
-
   /* Does nothing and returns an error code if empty name. */
   if (*file_name == '\0') {
     f->eax = (int32_t) BAD_ARGUMENTS;
@@ -262,7 +265,7 @@ filesize (struct intr_frame *f) {
 
 /* Reads size bytes from the file open as fd into buffer. Returns the number
 of bytes actually read (0 at end of file), or -1 if the file could not be read
-(excluding end of file). Fd 0 will read from keyboard. */
+(excluding end of file). KEYBOARD_FD will read from keyboard. */
 static void
 read (struct intr_frame *f) {
   int fd = EXTRACT_ARG_1((int *) f->esp);
@@ -272,7 +275,7 @@ read (struct intr_frame *f) {
   /* Check buffer is valid. */
   verify_buffer(buffer, size);
 
-  /* Read from the keyboard one character at a time if keyboard is indicated. */
+  /* Read from the keyboard one char at a time if KEYBOARD_FD is indicated. */
   if (fd == KEYBOARD_FD) {
     unsigned bytes_read = NOTHING;
     char *buf = buffer;
@@ -300,7 +303,7 @@ read (struct intr_frame *f) {
 
 /* Writes size bytes from buffer to the open file fd. Returns the number of
 bytes actually written, which may be less than size if some bytes could not
-be written. */
+be written. if fd is CONSOLE_FD the write is instead to console.*/
 static void
 write (struct intr_frame *f) {
   int fd = EXTRACT_ARG_1((int *) f->esp);
@@ -316,23 +319,23 @@ write (struct intr_frame *f) {
     return;
   } 
 
-  /* Write to the console in 300 char chunks if keyboard is indicated. */
-  int bytes_written = 0;
+  /* Write to the console in BUFFER_CHUNK_SIZEs if CONSOLE_FD is indicated. */
+  int bytes_written = NOTHING;
   if (fd == CONSOLE_FD) {
     unsigned remaining = size;
     const char *buf = buffer;
 
-    /* Write in 300 byte chunks. */
+    /* Write in BUFFER_CHUNK_SIZE byte chunks. */
     acquire_filesys();
-    while (remaining > 300) {
-      putbuf(buf, 300);
-      buf += 300;
-      remaining -= 300;
-      bytes_written += 300;
+    while (remaining > BUFFER_CHUNK_SIZE) {
+      putbuf(buf, BUFFER_CHUNK_SIZE);
+      buf += BUFFER_CHUNK_SIZE;
+      remaining -= BUFFER_CHUNK_SIZE;
+      bytes_written += BUFFER_CHUNK_SIZE;
     }
 
     /* Write the remainder. */
-    if (remaining > 0) {
+    if (remaining > NOTHING) {
       putbuf(buf, remaining);
       bytes_written += remaining;
     }
