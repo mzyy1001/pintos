@@ -36,11 +36,11 @@ static void exit (int status);
 /* Process identifier. */
 typedef int pid_t;
 /* Syscall function. */
-typedef void (syscall_t)(struct intr_frame *);
+typedef void (syscall_t) (struct intr_frame *);
 
 /* Used to ensure safe memory access by verifying a pointer pre-dereference. */
 static bool
-verify(void *vaddr) {
+verify (void *vaddr) {
   if (vaddr == NULL || !is_user_vaddr(vaddr) || pagedir_get_page(thread_current()->pagedir, vaddr) == NULL) {
     exit(BAD_ARGUMENTS);
   }
@@ -49,7 +49,7 @@ verify(void *vaddr) {
 
 /* Extract a single argument and return it, not moving the pointer. */
 static int
-extract_arg_n(int *stack_pointer, int arg_num) {
+extract_arg_n (int *stack_pointer, int arg_num) {
   if (verify(stack_pointer + arg_num)) {
     return stack_pointer[arg_num];
   }
@@ -59,11 +59,11 @@ extract_arg_n(int *stack_pointer, int arg_num) {
 }
 
 /* Extract the first argument and return it, not moving the pointer. */
-#define extract_arg_1(stack_pointer) (extract_arg_n(stack_pointer, 1))
+#define EXTRACT_ARG_1(stack_pointer) (extract_arg_n(stack_pointer, 1))
 /* Extract the second argument and return it, not moving the pointer. */
-#define extract_arg_2(stack_pointer) (extract_arg_n(stack_pointer, 2))
+#define EXTRACT_ARG_2(stack_pointer) (extract_arg_n(stack_pointer, 2))
 /* Extract the third argument and return it, not moving the pointer. */
-#define extract_arg_3(stack_pointer) (extract_arg_n(stack_pointer, 3))
+#define EXTRACT_ARG_3(stack_pointer) (extract_arg_n(stack_pointer, 3))
 
 /* This function ensures all parts of a string are verified. */
 static bool
@@ -137,14 +137,14 @@ exit (int status) {
 /* Wraps exit allowing it to be called by the syscall handler. */
 static void
 sys_exit (struct intr_frame *f) {
-  exit(extract_arg_1((int *) f->esp));
+  exit(EXTRACT_ARG_1((int *) f->esp));
 }
 
 /* Runs the executable whose name is given in cmd line, passing any given
 arguments, and returns the new process’s program id (pid). */
 static void
 exec (struct intr_frame *f) {
-  const char *cmd_line = (char *) extract_arg_1((int *) f->esp);
+  const char *cmd_line = (char *) EXTRACT_ARG_1((int *) f->esp);
   // TODO(Naive cmd_line length check may be improvable)
   if (!verify_string(cmd_line) || strlen(cmd_line) > PGSIZE) {
     f ->eax = (int32_t) BAD_ARGUMENTS;
@@ -191,7 +191,7 @@ exec (struct intr_frame *f) {
 
 static void
 wait (struct intr_frame *f) {
-  pid_t pid = extract_arg_1((int *) f->esp);
+  pid_t pid = EXTRACT_ARG_1((int *) f->esp);
   f->eax = (int32_t) process_wait(pid);
 }
 
@@ -200,8 +200,8 @@ wait (struct intr_frame *f) {
 whether it was successfully created. Creating a new file doesn't open it. */
 static void
 create (struct intr_frame *f) {
-  const char *file_name = (char *) extract_arg_1((int *) f->esp);
-  unsigned initial_size = (unsigned) extract_arg_2 ((int *) f->esp);
+  const char *file_name = (char *) EXTRACT_ARG_1((int *) f->esp);
+  unsigned initial_size = (unsigned) EXTRACT_ARG_2 ((int *) f->esp);
   /* Replace 2nd & 3rd condition with string validate function */
   if (initial_size > INT_MAX || !verify_string(file_name)) {
     exit(BAD_ARGUMENTS);
@@ -214,7 +214,7 @@ A file may be removed regardless of whether it is open or closed, and removing
 an open file does not close it. */
 static void
 remove (struct intr_frame *f) {
-  const char *file_name = (char *) extract_arg_1((int *) f->esp);
+  const char *file_name = (char *) EXTRACT_ARG_1((int *) f->esp);
   /* Replace 2nd & 3rd condition with string validate function */
   if (!verify_string(file_name) || *file_name == '\0') {
     f->eax = (int32_t) NOTHING;
@@ -231,7 +231,7 @@ for a single file are closed independently in separate calls to close and
 do not share a file position. */
 static void
 open (struct intr_frame *f) {
-  const char *file_name = (char *) extract_arg_1((int *) f->esp);
+  const char *file_name = (char *) EXTRACT_ARG_1((int *) f->esp);
   /* Replace condition with string validate function */
   if (!verify_string(file_name)) {
     exit(BAD_ARGUMENTS);
@@ -251,7 +251,7 @@ open (struct intr_frame *f) {
 /* Returns the size, in bytes, of the file open as fd. -1 on no match. */
 static void
 filesize (struct intr_frame *f) {
-  int fd = extract_arg_1((int *) f->esp);
+  int fd = EXTRACT_ARG_1((int *) f->esp);
   /* May need to add an fd check here too. */
   struct file *file = fd_table_get(fd);
   // TODO(May want to change this behaviour to kill the program or something)
@@ -268,9 +268,9 @@ of bytes actually read (0 at end of file), or -1 if the file could not be read
 (excluding end of file). Fd 0 will read from keyboard. */
 static void
 read (struct intr_frame *f) {
-  int fd = extract_arg_1((int *) f->esp);
-  void *buffer = (void *) extract_arg_2((int *) f->esp);
-  unsigned size = (unsigned) extract_arg_3 ((int *) f->esp);
+  int fd = EXTRACT_ARG_1((int *) f->esp);
+  void *buffer = (void *) EXTRACT_ARG_2((int *) f->esp);
+  unsigned size = (unsigned) EXTRACT_ARG_3 ((int *) f->esp);
   /* Check if buffer is valid. */
   if (!verify_buffer(buffer, size)) {
     exit(BAD_ARGUMENTS);
@@ -303,9 +303,9 @@ bytes actually written, which may be less than size if some bytes could not
 be written. */
 static void
 write (struct intr_frame *f) {
-  int fd = extract_arg_1((int *) f->esp);
-  const void *buffer = (void *) extract_arg_2((int *) f->esp);
-  unsigned size = (unsigned) extract_arg_3 ((int *) f->esp);
+  int fd = EXTRACT_ARG_1((int *) f->esp);
+  const void *buffer = (void *) EXTRACT_ARG_2((int *) f->esp);
+  unsigned size = (unsigned) EXTRACT_ARG_3 ((int *) f->esp);
   /* Check if buffer is invalid. */
   if (!verify_buffer(buffer, size)) {
     exit(BAD_ARGUMENTS);
@@ -360,8 +360,8 @@ write (struct intr_frame *f) {
 expressed in bytes from the beginning of the file (0 would be the start). */
 static void
 seek (struct intr_frame *f) {
-  int fd = extract_arg_1((int *) f->esp);
-  unsigned position = (unsigned) extract_arg_2 ((int *) f->esp);
+  int fd = EXTRACT_ARG_1((int *) f->esp);
+  unsigned position = (unsigned) EXTRACT_ARG_2 ((int *) f->esp);
   /* Out of bounds position would overflow in type conversion. */
   if (position > INT_MAX) {
     // TODO(Figure out how to correctly handle such an error case)
@@ -381,7 +381,7 @@ seek (struct intr_frame *f) {
 expressed in bytes from the beginning of the file. */
 static void
 tell (struct intr_frame *f) {
-  int fd = extract_arg_1((int *) f->esp);
+  int fd = EXTRACT_ARG_1((int *) f->esp);
   /* May need to add a fd check here too. */
   // TODO(Very similar to filesize, may be refactorable to avoid duplication)
   struct file *file = fd_table_get(fd);
@@ -398,7 +398,7 @@ tell (struct intr_frame *f) {
 closes all its open file descriptors, as if calling this function for each. */
 static void
 close (struct intr_frame *f) {
-  int fd = extract_arg_1((int *) f->esp);
+  int fd = EXTRACT_ARG_1((int *) f->esp);
   /* May need to add a fd check here too. */
   fd_table_close(fd);
 }
@@ -426,7 +426,7 @@ syscall_handler (struct intr_frame *f)
   syscalls[*stack_pointer](f);
 }
 
-/* Initialises the intr*/
+/* Initializes the system call handler by registering the syscall interrupt. */
 void
 syscall_init (void)
 {

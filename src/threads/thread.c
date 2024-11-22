@@ -16,6 +16,7 @@
 #include "threads/malloc.h"
 
 #ifdef USERPROG
+#include "./filesys/filesys.h"
 #include "userprog/process.h"
 #include "filesys/file.h"
 #include "threads/malloc.h"
@@ -89,7 +90,7 @@ static void thread_update_recent_cpu (struct thread *t, void *aux UNUSED);
 int thread_get_ready(void);
 f_point calculate_recent(f_point recent_cpu,int nice);
 int calculate_priority(f_point recent_cpu,int nice);
-void init_parent_child(struct thread *child, struct thread *parent);
+void init_parent_child (struct thread *child, struct thread *parent);
 
 /*init ready*/
 void init_ready_list(void) 
@@ -245,7 +246,7 @@ fd_elem_hash (const struct hash_elem *a, void *aux UNUSED)
 
 /* Compares 2 file descriptor elements using their fds. */
 static bool
-fd_elem_less(const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED) {
+fd_elem_less (const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED) {
   struct file_descriptor_element *fd_elem_a = hash_entry(a, struct file_descriptor_element, hash_elem);
   struct file_descriptor_element *fd_elem_b = hash_entry(b, struct file_descriptor_element, hash_elem);
   return (fd_elem_a->fd > fd_elem_b->fd);
@@ -309,11 +310,9 @@ tid_t
   sf->eip = switch_entry;
   sf->ebp = 0;
 
-  /* initialises the parent_child struct, including pointers 
-   from parent and child threads */
-  init_parent_child(t, thread_current());
-
   #ifdef USERPROG
+  /* Fully initialise the parent_child struct and fd hash table. */
+  init_parent_child(t, thread_current());
   hash_init(&(t->file_descriptor_table), &fd_elem_hash, &fd_elem_less, NULL);
   #endif
 
@@ -326,7 +325,7 @@ tid_t
 }
 
 /* Initialises the parent_child struct. */
-void init_parent_child(struct thread *child, struct thread *parent) {
+void init_parent_child (struct thread *child, struct thread *parent) {
   struct parent_child *parent_child = malloc (sizeof(struct parent_child));
   parent_child->child_tid = child->tid;
   parent_child->parent_exit = false;
@@ -418,7 +417,7 @@ thread_tid (void)
 
 /* Frees the file_descriptor_element of, and closes the file of, the given hash element. */
 static void
-fd_hash_elem_free(struct hash_elem *e, void *aux UNUSED) {
+fd_hash_elem_free (struct hash_elem *e, void *aux UNUSED) {
   struct file_descriptor_element * elem_to_free = hash_entry(e, struct file_descriptor_element, hash_elem);
   synched_file_close(elem_to_free->file_pointer);
   free(elem_to_free);
@@ -711,7 +710,7 @@ thread_update_load(void)
 
 /* Get the next available fd and increment the counter. */
 static int
-thread_get_fd (void){
+thread_get_fd (void) {
   struct thread *t = thread_current();
   int next_fd = t->next_free_fd;
   t ->next_free_fd ++;

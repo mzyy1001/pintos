@@ -50,23 +50,23 @@ typedef int tid_t;
 
 /* An entry into the file descriptor table. */
 struct file_descriptor_element{
-  int fd;
-  struct file *file_pointer;
-  struct hash_elem hash_elem;
+  int fd;                        /* File descriptor. */
+  struct file *file_pointer;     /* Pointer to the file fd refers to. */
+  struct hash_elem hash_elem;    /* Hash element to allow addition to hash tables. */
 };
 
 /* Used to mediate parent-child pointers */
 struct parent_child
 {
-   tid_t child_tid;           /* used in get_child_pach to find child by tid*/
-   struct list_elem child_elem;
+   tid_t child_tid;                 /* Child's TID, used in get_child_pach to find the child. */
+   struct list_elem child_elem;     /* List element for this to be in a thread's children list. */
    bool parent_exit;
    bool child_exit;
    int child_exit_code;
-   struct semaphore sema;           /* access synchronisation*/
-   bool wait;                       /* to check if wait is called twice */
+   struct semaphore sema;           /* Semaphore to ensure access synchronisation to this. */
+   bool wait;                       /* Stores if wait has been called, used to limit to 1 call. */
    struct semaphore waiting;        /* to signal to parent child has exited*/
-   bool child_load_success;
+   bool child_load_success;         /* Stores if the child loaded successfully. */
    struct semaphore child_loaded;   /* to signal to parent child has loaded (successfully or not)*/
    };
 
@@ -145,12 +145,12 @@ struct thread
 
 #ifdef USERPROG
    /* Owned by userprog/process.c. */
-   struct hash file_descriptor_table;
-   int next_free_fd;
+   struct hash file_descriptor_table;  /* The file descriptor table, maps each fd to its file. */
+   int next_free_fd;                   /* The next available fd for use in adding to the table. */
    uint32_t *pagedir;                  /* Page directory. */
-   struct list children;
-   struct parent_child *parent;
-   struct file *executable_file;
+   struct list children;               /* List of parent_childs, the children of this thread. */
+   struct parent_child *parent;        /* An intermediary between this thread and its parent. */
+   struct file *executable_file;       /* The executable this is running, used to deny writes. */
 #endif
 
     /* Owned by thread.c. */
@@ -204,12 +204,12 @@ void update_priority(struct thread *, void *);
 bool thread_is_idle(struct thread *);
 void thread_recent_increment(struct thread*);
 
+#ifdef USERPROG
 struct file *fd_table_get (int);
 void fd_table_close (int);
 int fd_table_add (struct file*);
-#endif /* threads/thread.h */
-
-#ifdef USERPROG
-void init_parent_child(struct thread *, struct thread *);
-struct thread * get_thread_by_tid(tid_t tid);
+void init_parent_child (struct thread *, struct thread *);
+struct thread * get_thread_by_tid (tid_t tid);
 #endif
+
+#endif /* threads/thread.h */
