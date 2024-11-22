@@ -21,6 +21,9 @@ static bool load (void *args_, const char *cmdline, void (**eip) (void), void **
 static bool setup_stack (void **esp, void *args_, char *file_name);
 struct parent_child *get_child_pach(tid_t c_tid);
 
+/* The number of bytes in one word of data. */
+#define WORD_SIZE 4
+
 /* Checks if the stack pointer (`esp`) is within safe memory bounds to prevent stack overflow. */
 static bool
 stack_overflowing (uint8_t *esp) {
@@ -59,14 +62,14 @@ process_execute (const char *arguments)
   char *file_name = strtok_r(args_copy, " ", &save_ptr);
   if (file_name == NULL || *file_name == '\0') {
     palloc_free_page(args_copy);
-    return -1;
+    return BAD_ARGUMENTS;
   }
 
   /* Save the file_name independently. */
   char *file_name_copy = malloc(strlen(file_name) + 1);
   if (file_name_copy == NULL) {
     palloc_free_page(args_copy);
-    return TID_ERROR;
+    return MEMORY_ALLOCATION_ERROR;
   }
 
   /* Correctly initialise file_name_copy and args_copy*/
@@ -166,13 +169,13 @@ process_wait (tid_t child_tid)
 
   /* Child_tid doesn't correspond to any of this thread's children. */
   if (child_pach == NULL) {
-    return -1;
+    return BAD_ARGUMENTS;
   }
 
-  /* Check if parent already called this on the same thread, if so that is 
+  /* Check if parent already called this on the same thread, if so that TID is 
   not allowed (as child is already dead) and so it returns an error code. */
   if (child_pach->been_waited_on) {
-    return -1;
+    return BAD_ARGUMENTS;
   }
 
   /* Synchronised modification of child_pach->sema. */ 
@@ -528,7 +531,8 @@ Start page must be lower than end page or no pages will be cleaned. */
 static void
 cleanup_allocated_pages (uint8_t *start_upage, uint8_t *end_upage) {
   struct thread *t = thread_current();
-  /* Loop through each page and clear & free it. */
+
+  /* Loop through each page, clearing & freeing it. */
   while (start_upage < end_upage) {
     void *kpage = pagedir_get_page(t->pagedir, start_upage);
     if (kpage != NULL) {
@@ -659,7 +663,7 @@ setup_stack (void **esp, void *args_, char *file_name)
         }
 
         /* Update the total size of arguments (includes alignment). */
-        args_size += arg_len + ((uintptr_t)(*esp) % 4);
+        args_size += arg_len + ((uintptr_t)(*esp) % WORD_SIZE);
 
         /* Check for stack overflow to prevent the stack 
         pointer entering incorrect memory locations. */
@@ -674,7 +678,7 @@ setup_stack (void **esp, void *args_, char *file_name)
       }
 
       /* Word-align the stack. */
-      uintptr_t align = (uintptr_t)(*esp) % 4;
+      uintptr_t align = (uintptr_t)(*esp) % WORD_SIZE;
       if (align)
       {
         *esp -= align;
@@ -719,6 +723,7 @@ setup_stack (void **esp, void *args_, char *file_name)
       goto done;
     }
   }
+
   /* If the setup was unsuccessfull in any way clean up everything. */
   done:
   if (!success && kpage != NULL)

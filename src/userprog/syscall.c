@@ -16,14 +16,10 @@
 
 /* Number of syscalls implemented that the syscall handler can call. */
 #define NUMBER_OF_SYSCALLS 13
-/* Exit code when given bad (invalid or out of range) arguments. */
-#define BAD_ARGUMENTS (-1)
 /* Syscall exit code when an operation with the parent_child struct fails. */
 #define PARENT_CHILD_ERROR (-1)
 /* Syscall exit code when a (filesys/process)_{name} function doesn't run as intended. */
 #define FUNCTION_ERROR (-1)
-/* Syscall exit code when a memory allocation fails. */
-#define MEMORY_ALLOCATION_ERROR (-1)
 /* Max string argument length to prevent incorrectly structured strings infinite looping. */
 #define MAX_STRING_LENGTH (2 << 20)
 /* Syscall return code for return that 0 of whatever was 
@@ -67,7 +63,7 @@ extract_arg_n (int *stack_pointer, int arg_num) {
 static void
 verify_string (const char *str) {
   const char *ptr = str;
-  int byte_count = 0;
+  int byte_count = NOTHING;
 
   /* Verify the first byte. */
   verify((void *) ptr);
@@ -83,7 +79,7 @@ verify_string (const char *str) {
     }
 
     /* Verify byte if crossing into a new page. */
-    if ((uint32_t) ptr % PGSIZE == 0) {
+    if ((uint32_t) ptr % PGSIZE == NOTHING) {
       verify((void *) ptr);
     }
   }
@@ -190,7 +186,7 @@ create (struct intr_frame *f) {
   const char *file_name = (char *) EXTRACT_ARG_1((int *) f->esp);
   unsigned initial_size = (unsigned) EXTRACT_ARG_2 ((int *) f->esp);
   
-  /* Verify arguments.  */
+  /* Verify arguments. */
   verify_string(file_name);
   if (initial_size > INT_MAX) {
     exit_process_with_status(BAD_ARGUMENTS);
