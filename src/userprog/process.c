@@ -57,23 +57,29 @@ process_execute (const char *arguments)
 
   /* Parse the file name and store it independently using malloc. */
   char *file_name = strtok_r(args_copy, " ", &save_ptr);
-  if (file_name == NULL) {
+  if (file_name == NULL || *file_name == '\0') {
     palloc_free_page(args_copy);
-    return TID_ERROR;
+    return -1;
   }
-  /* Use malloc for saving the file_name independently. */
+
+  /* Save the file_name independently. */
   char *file_name_copy = malloc(strlen(file_name) + 1);
   if (file_name_copy == NULL) {
     palloc_free_page(args_copy);
     return TID_ERROR;
   }
+
+  /* Correctly initialise file_name_copy and args_copy*/
   strlcpy(file_name_copy, file_name, strlen(file_name) + 1);
   strlcpy(args_copy, arguments, PGSIZE);
+
   /* Create a new thread to execute the program. */
   tid = thread_create(file_name_copy, PRI_DEFAULT, start_process, args_copy);
+
+  /* Free the correct memory on thread creation faliure. */
   if (tid == TID_ERROR) {
-    free(file_name_copy); // Free the allocated memory on failure
-    palloc_free_page(args_copy); // Free the copied arguments
+    free(file_name_copy);
+    palloc_free_page(args_copy);
   }
 
   return tid;
@@ -111,15 +117,6 @@ start_process (void *args_)
     thread_exit ();
   }
 
-#ifdef DEBUG
-  uint32_t *stack = (uint32_t *)if_.esp;
-  printf("Stack contents before starting user process:\n");
-  for (int i = 0; i < 16; i++) // Print first 16 words
-  {
-    printf("  0x%p: 0x%08x\n", stack, *stack);
-    stack++;
-  }
-#endif
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
@@ -131,20 +128,25 @@ start_process (void *args_)
 }
 
 /* Returns the intermediary structure (parent_child) of the parent's child with child_tid. 
-The actual child thread * can be accessed using: get_child_pach(child_tid)->child */
+The actual child thread * can be accessed using: get_child_pach(child_tid)->child.
+Returns NULL if nothing matches the given c_tid. */
 struct parent_child *get_child_pach (tid_t c_tid) {
   struct list_elem *e;
-  struct parent_child *child_pach = NULL;
-  struct list *children = &thread_current()->children;
+  struct parent_child *child_pach;
+  struct list *children = &(thread_current()->children);
+  
+  /* Loop through the children returning the correct parent-child patch. */
   for (e = list_begin(children); e != list_end(children); e = list_next(e)) {
     child_pach = list_entry(e, struct parent_child, child_elem);
 
+    /* Child located. */
     if (child_pach->child_tid == c_tid) {
-      //child found!
-      break;
+      return child_pach;
     }
   }
-  return child_pach;
+
+  /* No matching child. */
+  return NULL;
 }
 
 /* Waits for thread TID to die and returns its exit status.
@@ -159,33 +161,30 @@ struct parent_child *get_child_pach (tid_t c_tid) {
 int
 process_wait (tid_t child_tid)
 {
-
+  /* Get the correct parent-child struct. */
   struct parent_child *child_pach = get_child_pach(child_tid);
 
-  /* child_tid doesn't correspond to any of this thread's children*/
+  /* Child_tid doesn't correspond to any of this thread's children. */
   if (child_pach == NULL) {
     return -1;
   }
 
-  /* check if parent called this on the same tiD
-    if it did, it would have waited for child to up the waiting semaphore
-    by then the child has already set child_dead to true */
-  
+  /* Check if parent already called this on the same thread, if so that is 
+  not allowed (as child is already dead) and so it returns an error code. */
   if (child_pach->been_waited_on) {
     return -1;
   }
 
-  /* synchronised modification of child_pach->sema.
-  this is not needed, as wait is only used by parent thread.
-  however, we keep it synchronised for future-proofing */ 
+  /* Synchronised modification of child_pach->sema. */ 
   sema_down(&child_pach->sema);
   child_pach->been_waited_on = true;
   sema_up(&child_pach->sema);
 
-  sema_down(&child_pach->waiting);      /* wait for child to exit*/
+  /* Wait for child to exit. */
+  sema_down(&child_pach->waiting);      
 
-  // here we know that the child is dead and has provided the exit code
-  // see process_exit
+  /* We know that the child is dead and has provided the exit code, 
+  look at process_exit to understand how that happened. */ 
   return child_pach->child_exit_code;
 }
 
@@ -197,13 +196,17 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
+  /* Get the parent-child relationship structure with this thread's parent. */
   struct parent_child *parent_pach = cur->parent;
 
+  /* If this thread is a child of some parent perform the necessary cleanup. */
   if (parent_pach != NULL)
   {
+    /* Ensure mutex and print the necessary termination message. */
     sema_down(&parent_pach->sema);
     printf("%s: exit(%d)\n", cur->name, parent_pach->child_exit_code);
 
+    /* If the parent is dead the child must clean up the shared structure. */
     if (parent_pach->parent_dead)
     {
       free(parent_pach);
@@ -211,36 +214,40 @@ process_exit (void)
     }
     else
     {
+      /* Otherwise mark this child as dead and must release semaphores. */
       parent_pach->child_dead = true;
       sema_up(&parent_pach->waiting);
       sema_up(&parent_pach->sema);
     }
   }
 
-  // Traverse the list of children, letting each child know it has exited (e.g. parent_exit = true). use the sema
+  /* Traverse the list of children, letting each child know it's parent exited. */
   struct list *children = &cur->children;
   struct list_elem *e = list_begin(children);
-
   while (e != list_end(children)) {
+    /* Get the correct parent_child structure and enfore mutex. */
     struct parent_child *child_pach = list_entry(e, struct parent_child, child_elem);
     sema_down(&child_pach->sema);
 
+    /* If the child is dead clear up the structure. */
     if (child_pach->child_dead) {
       e = list_remove(e);
       free(child_pach);
     } else {
+      /* Otherwise mark parent as dead and allow reaccess to the structure. */
       child_pach->parent_dead = true;
-      //No need to up waiting
       sema_up(&child_pach->sema);
       e = list_next(e); 
     }
   }
 
-  if (thread_current()->executable_file) {
+  /* Allow writes to the associated executable file if it exist. */
+  if (thread_current()->executable_file != NULL) {
     synched_file_allow_write(thread_current()->executable_file);
     file_close(thread_current()->executable_file);
     cur->executable_file = NULL;
   }
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -514,10 +521,12 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
   return true;
 }
 
-/* Cleans up and frees all allocated pages within the specified user address range. */
+/* Cleans up and frees all allocated pages within the specified user address range. 
+Start page must be lower than end page or no pages will be cleaned. */
 static void
 cleanup_allocated_pages (uint8_t *start_upage, uint8_t *end_upage) {
   struct thread *t = thread_current();
+  /* Loop through each page and clear & free it. */
   while (start_upage < end_upage) {
     void *kpage = pagedir_get_page(t->pagedir, start_upage);
     if (kpage != NULL) {
@@ -615,43 +624,50 @@ setup_stack (void **esp, void *args_, char *file_name)
   ASSERT(file_name != NULL);
   uint8_t *kpage = NULL;
   bool success = false;
-  char **argv = malloc(MAX_ARGS * sizeof(char *));
-  if (argv == NULL)
-  {
-    success = false;
-    goto done;
-  }
+
+  /* Allocate memory for argv to store arguments. */
+  char *argv[MAX_ARGS];
   
+  /* Allocate a clean page for the stack. */
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL)
   {
+    /* Try install it it at the top of memory. */
     success = install_page(((uint8_t *)PHYS_BASE) - PGSIZE, kpage, true);
     if (success)
     {
       *esp = PHYS_BASE;
 
-      /* Push arguments onto the stack. */ 
+      /* Push arguments onto the stack in reverse order. */ 
       char *args = args_;
       size_t args_size = 0;
       int argc = 0;
       char *arg = strtok_r(args, " ", &save_ptr);
+
+      /* Tokenise the arguments string and push each onto the stack. */
       while (arg != NULL)
       {
         size_t arg_len = strlen(arg) + 1;
         *esp -= strlen(arg) + 1;
         
+        /* Ensure MAX_ARGS is not exceeded. */
         if (argc >= MAX_ARGS) {
           success = false;
           goto done;
         }
+
+        /* Update the total size of arguments (includes alignment). */
         args_size += arg_len + ((uintptr_t)(*esp) % 4);
-        if (stack_overflowing((uint8_t *) *esp)) {
-          success = false;
-          goto done;
-        }
+
+        /* Check for stack overflow to prevent the stack 
+        pointer entering incorrect memory locations. */
+        CHECK_STACK_OVERFLOW(*esp);
+
+        /* Add argument to the stack. */
         memcpy(*esp, arg, strlen(arg) + 1);
         argv[argc++] = *esp;
         
+        /* Get the next argument for repeat. */
         arg = strtok_r(NULL, " ", &save_ptr);
       }
 
@@ -664,9 +680,11 @@ setup_stack (void **esp, void *args_, char *file_name)
         memset(*esp, 0, align);
       }
 
-      /* Push argument addresses */ 
+
       /* Null-terminate argv. */
       argv[argc] = NULL;
+      
+      /* Push argument addresses onto the stack. */ 
       for (int i = argc; i >= 0; i--)
       {
         *esp -= sizeof(char *);
@@ -674,28 +692,32 @@ setup_stack (void **esp, void *args_, char *file_name)
         memcpy(*esp, &argv[i], sizeof(char *));
       }
 
-      /* Push argv and argc. */
+      /* Push argv onto the stack. */
       char **argv_ptr = *esp;
       *esp -= sizeof(char **);
       CHECK_STACK_OVERFLOW(*esp);
       memcpy(*esp, &argv_ptr, sizeof(char **));
+
+      /* Push argc onto the stack. */
       *esp -= sizeof(int);
       CHECK_STACK_OVERFLOW(*esp);
       *(int *)*esp = argc;
 
-      /* Push a fake return address. */ 
+      /* Push a fake return address onto the stack. */ 
       *esp -= sizeof(void *);
       CHECK_STACK_OVERFLOW(*esp);
       *(void **)*esp = 0;
     }
     else
     {
+      /* If installing the page fails clean up the page. */
       printf("setup_stack: Cleaning up stack page at %p\n", kpage);
       palloc_free_page(kpage);
       kpage = NULL;
       goto done;
     }
   }
+  /* If the setup was unsuccessfull in any way clean up everything. */
   done:
   if (!success && kpage != NULL)
   {
@@ -704,10 +726,7 @@ setup_stack (void **esp, void *args_, char *file_name)
     pagedir_clear_page(thread_current()->pagedir, upage);
     kpage = NULL;
   }
-  if (argv != NULL)
-  {
-    free(argv);
-  }
+
   return success;
 }
 

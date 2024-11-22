@@ -205,9 +205,12 @@ bool thread_is_idle(struct thread *);
 void thread_recent_increment(struct thread*);
 
 #ifdef USERPROG
+/* Fd table functions*/
 struct file *fd_table_get (int);
 void fd_table_close (int);
 int fd_table_add (struct file*);
+
+/* Parent-child functions. */
 void init_parent_child (struct thread *, struct thread *);
 void exit_process_with_status (int);
 #endif

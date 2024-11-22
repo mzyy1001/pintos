@@ -249,9 +249,10 @@ fd_elem_hash (const struct hash_elem *a, void *aux UNUSED)
 /* Compares 2 file descriptor elements using their fds. */
 static bool
 fd_elem_less (const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED) {
-  struct file_descriptor_element *fd_elem_a = hash_entry(a, struct file_descriptor_element, hash_elem);
-  struct file_descriptor_element *fd_elem_b = hash_entry(b, struct file_descriptor_element, hash_elem);
-  return (fd_elem_a->fd > fd_elem_b->fd);
+  return (
+    hash_entry(a, struct file_descriptor_element, hash_elem)->fd > 
+      hash_entry(b, struct file_descriptor_element, hash_elem)->fd
+  );
 }
 
 
@@ -328,20 +329,24 @@ tid_t
 
 /* Initialises the parent_child struct. */
 void init_parent_child (struct thread *child, struct thread *parent) {
+  /* Allocate the struct memory. */
   struct parent_child *parent_child = malloc (sizeof(struct parent_child));
+  
+  /* Initialise the fields*/
   parent_child->child_tid = child->tid;
   parent_child->parent_dead = false;
   parent_child->child_dead = false;
-  parent_child->child_exit_code = -1; /* initialised to -1. exit syscall will modify it*/
-  sema_init(&parent_child->sema, 1);
+  parent_child->child_exit_code = -1; 
   parent_child->been_waited_on = false;
+  
+  /* Initialise the semaphores. */
+  sema_init(&parent_child->sema, 1);
   sema_init(&parent_child->waiting, 0);
-
-  /* pointers from threads to parent_child */
+  sema_init(&parent_child->child_loaded, 0);
+  
+  /* Finish setting up the relationship by assigning both pointer to each other. */
   list_push_front(&parent->children, &parent_child->child_elem);
   child->parent = parent_child;
-
-  sema_init(&parent_child->child_loaded, 0);
 }
 
 /* Terminates the current user program, sending its exit status to the kernel.
@@ -350,6 +355,7 @@ void
 exit_process_with_status (int status) {
   struct parent_child *parent_pach = thread_current()->parent;
 
+  /* Set the exit status ensuring synchronisation. */
   sema_down(&parent_pach->sema);
   parent_pach->child_exit_code = status;
   sema_up(&parent_pach->sema);
@@ -446,7 +452,9 @@ thread_exit (void)
   ASSERT (!intr_context ());
 
 #ifdef USERPROG
+  /* Delegate userprog related cleanup to process_exit. */
   process_exit ();
+  /* Clean up the hash table once the process is cleaned up. */
   hash_destroy (&(thread_current()->file_descriptor_table), &fd_hash_elem_free);
 #endif
 
@@ -728,9 +736,13 @@ static int
 thread_get_fd (void) {
   struct thread *t = thread_current();
   int next_fd = t->next_free_fd;
+
+  /* Returns an invalid fd if all available fds are exhausted. */
   if (next_fd >= INT_MAX) {
     return -1;
   }
+
+  /* Otherwise increment the next available fd and return a valid fd. */
   t ->next_free_fd ++;
   return next_fd;
 }
@@ -747,7 +759,7 @@ fd_table_add (struct file* file) {
     exit_process_with_status (-1);
   }
 
-  /* Get an fd and if fds have been exhausted, kill the process. */
+  /* Get an fd, if fds have been exhausted, kill the process. */
   int available_fd = thread_get_fd();
   if (available_fd == -1) {
     synched_file_close(file);
@@ -777,13 +789,18 @@ Still returns result on a failed match, which propagates through the NULL. */
 struct file *
 fd_table_get (int fd) {
   struct hash *hash_table = &(thread_current()->file_descriptor_table);
+
+  /* Locate the hash_entry the fd refers to using a temporary element. */
   struct file_descriptor_element temp_elem;
   temp_elem.fd = fd;
   struct hash_elem *result = hash_find(hash_table, &(temp_elem.hash_elem));
+  
   /* Most probably a bad fd recieved, propagates NULL. */
   if (result == NULL) {
     return NULL;
   }
+
+  /* Return the file the hash_entry referred to. */
   return (hash_entry (result, struct file_descriptor_element, hash_elem)->file_pointer);
 }
 
@@ -791,11 +808,13 @@ fd_table_get (int fd) {
 void
 fd_table_close (int fd) {
   struct hash *hash_table = &(thread_current()->file_descriptor_table);
+
+  /* Delete the hash_entry the fd refers to using a temporary element. */
   struct file_descriptor_element temp_elem;
   temp_elem.fd = fd;
   struct hash_elem *result = hash_delete(hash_table, &(temp_elem.hash_elem));
   
-  /* Open entry matching fd found and can be closed. */
+  /* Open entry matching fd found, and can be cleaned up. */
   if (result != NULL) {
     fd_hash_elem_free (result, NULL);
   }

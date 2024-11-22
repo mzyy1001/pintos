@@ -66,7 +66,7 @@ extract_arg_n (int *stack_pointer, int arg_num) {
 /* Extract the third argument and return it, not moving the pointer. */
 #define EXTRACT_ARG_3(stack_pointer) (extract_arg_n(stack_pointer, 3))
 
-/* This function ensures all parts of a string are verified. */
+/* Ensures all of a string is verified. */
 static bool
 verify_string (const char *str) {
   const char *ptr = str;
@@ -77,16 +77,17 @@ verify_string (const char *str) {
     return false;
   }
 
+  /* Loop through each byte .*/
   while (*ptr != '\0') {
     ptr++;
     byte_count++;
 
-    /* Prevent infinite looping using the max string length. */
+    /* Prevent infinite looping on incorrectly formatted strings (no '\0'). */
     if (byte_count > MAX_STRING_LENGTH) {
       return false;
     }
 
-    /* Only need to verify if crossing into a new page. */
+    /* Verify byte if crossing into a new page. */
     if ((uint32_t) ptr % PGSIZE == 0) {
       if (!verify((void *) ptr)) {
         return false;
@@ -99,6 +100,7 @@ verify_string (const char *str) {
   return true;
 }
 
+/* Ensures all of a buffer is verified. */
 static bool
 verify_buffer (const void *buffer, unsigned size) {
   const uint8_t *ptr = (const uint8_t *) buffer;
@@ -121,7 +123,7 @@ halt (struct intr_frame *aux UNUSED) {
   shutdown_power_off();
 }
 
-/* Wraps exit allowing it to be called by the syscall handler. */
+/* Wraps exit_process_with_status so it can be called by syscall handler. */
 static void
 sys_exit (struct intr_frame *f) {
   exit_process_with_status(EXTRACT_ARG_1((int *) f->esp));
@@ -177,6 +179,7 @@ exec (struct intr_frame *f) {
   f ->eax = (int32_t) tid;
 }
 
+/* Wraps process_wait allowing it to be called by the syscall handler. */
 static void
 wait (struct intr_frame *f) {
   pid_t pid = EXTRACT_ARG_1((int *) f->esp);
@@ -190,10 +193,12 @@ static void
 create (struct intr_frame *f) {
   const char *file_name = (char *) EXTRACT_ARG_1((int *) f->esp);
   unsigned initial_size = (unsigned) EXTRACT_ARG_2 ((int *) f->esp);
-  /* Replace 2nd & 3rd condition with string validate function */
+
+  /* Verify arguments. */
   if (initial_size > INT_MAX || !verify_string(file_name)) {
     exit_process_with_status(BAD_ARGUMENTS);
   }
+
   f->eax = (int32_t) synched_filesys_create(file_name, (off_t) initial_size);
 }
 
@@ -203,11 +208,13 @@ an open file does not close it. */
 static void
 remove (struct intr_frame *f) {
   const char *file_name = (char *) EXTRACT_ARG_1((int *) f->esp);
-  /* Replace 2nd & 3rd condition with string validate function */
+
+  /* Verify file_name. */
   if (!verify_string(file_name) || *file_name == '\0') {
     f->eax = (int32_t) NOTHING;
     return;
   }
+
   f->eax = (int32_t) synched_filesys_remove(file_name);
 }
 
@@ -220,19 +227,27 @@ do not share a file position. */
 static void
 open (struct intr_frame *f) {
   const char *file_name = (char *) EXTRACT_ARG_1((int *) f->esp);
-  /* Replace condition with string validate function */
+
+  /* Verify arguments. */
   if (!verify_string(file_name)) {
     exit_process_with_status(BAD_ARGUMENTS);
   }
+
+  /* Does nothing and returns an error code if empty name. */
   if (*file_name == '\0') {
     f->eax = (int32_t) BAD_ARGUMENTS;
     return;
   }
+  
+  /* Open the file and add it to the fd table. */
   struct file *file = synched_filesys_open(file_name);
+
+  /* If file open fails return error result. */
   if (file == NULL) {
     f->eax = (int32_t) FUNCTION_ERROR;
     return;
   }
+
   f->eax = (int32_t) fd_table_add(file);
 }
 
@@ -242,7 +257,7 @@ filesize (struct intr_frame *f) {
   int fd = EXTRACT_ARG_1((int *) f->esp);
   struct file *file = fd_table_get(fd);
 
-  /* Table get fails -> no match. */
+  /* Table_get fails -> no match. */
   if (file == NULL) {
     f->eax = (int32_t) BAD_ARGUMENTS;
     return;
@@ -325,6 +340,7 @@ write (struct intr_frame *f) {
       remaining -= 300;
       bytes_written += 300;
     }
+
     /* Write the remainder. */
     if (remaining > 0) {
       putbuf(buf, remaining);
@@ -418,16 +434,19 @@ handling to the correct syscall using function pointers. */
 static void
 syscall_handler (struct intr_frame *f)
 {
+  /* Verify stack pointer. */
   if (!verify(f->esp)) {
     exit_process_with_status(BAD_ARGUMENTS);
   }
 
-  int *stack_pointer = f->esp;
-  if (*stack_pointer < 0 || *stack_pointer >= NUMBER_OF_SYSCALLS) {
+  /* Unpack stack pointer and verify its value. */
+  int stack_pointer_val = *((int *) f->esp);
+  if (stack_pointer_val < 0 || stack_pointer_val >= NUMBER_OF_SYSCALLS) {
     exit_process_with_status(BAD_ARGUMENTS);
   }
 
-  syscalls[*stack_pointer](f);
+  /* Delegate handling to the correct syscall handler. */
+  syscalls[stack_pointer_val](f);
 }
 
 /* Initializes the system call handler by registering the syscall interrupt. */
