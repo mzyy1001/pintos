@@ -331,7 +331,11 @@ tid_t
 void init_parent_child (struct thread *child, struct thread *parent) {
   /* Allocate the struct memory. */
   struct parent_child *parent_child = malloc (sizeof(struct parent_child));
-  
+  if (parent_child == NULL) {
+    
+    thread_exit();
+  }
+
   /* Initialise the fields*/
   parent_child->child_tid = child->tid;
   parent_child->parent_dead = false;

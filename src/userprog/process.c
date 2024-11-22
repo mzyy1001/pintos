@@ -223,21 +223,23 @@ process_exit (void)
 
   /* Traverse the list of children, letting each child know it's parent exited. */
   struct list *children = &cur->children;
-  struct list_elem *e = list_begin(children);
-  while (e != list_end(children)) {
-    /* Get the correct parent_child structure and enfore mutex. */
-    struct parent_child *child_pach = list_entry(e, struct parent_child, child_elem);
-    sema_down(&child_pach->sema);
+  if (children != NULL) { 
+    struct list_elem *e = list_begin(children);
+    while (e != list_end(children)) {
+      /* Get the correct parent_child structure and enfore mutex. */
+      struct parent_child *child_pach = list_entry(e, struct parent_child, child_elem);
+      sema_down(&child_pach->sema);
 
-    /* If the child is dead clear up the structure. */
-    if (child_pach->child_dead) {
-      e = list_remove(e);
-      free(child_pach);
-    } else {
-      /* Otherwise mark parent as dead and allow reaccess to the structure. */
-      child_pach->parent_dead = true;
-      sema_up(&child_pach->sema);
-      e = list_next(e); 
+      /* If the child is dead clear up the structure. */
+      if (child_pach->child_dead) {
+        e = list_remove(e);
+        free(child_pach);
+      } else {
+        /* Otherwise mark parent as dead and allow reaccess to the structure. */
+        child_pach->parent_dead = true;
+        sema_up(&child_pach->sema);
+        e = list_next(e); 
+      }
     }
   }
 
