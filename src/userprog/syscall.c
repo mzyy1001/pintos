@@ -40,23 +40,18 @@ typedef int pid_t;
 typedef void (syscall_t) (struct intr_frame *);
 
 /* Used to ensure safe memory access by verifying a pointer pre-dereference. */
-static bool
+static void
 verify (void *vaddr) {
   if (vaddr == NULL || !is_user_vaddr(vaddr) || pagedir_get_page(thread_current()->pagedir, vaddr) == NULL) {
     exit_process_with_status(BAD_ARGUMENTS);
   }
-  return true;
 }
 
 /* Extract a single argument and return it, not moving the pointer. */
 static int
 extract_arg_n (int *stack_pointer, int arg_num) {
-  if (verify(stack_pointer + arg_num)) {
-    return stack_pointer[arg_num];
-  }
-  else {
-    thread_exit ();
-  }
+  verify(stack_pointer + arg_num);
+  return stack_pointer[arg_num];
 }
 
 /* Extract the first argument and return it, not moving the pointer. */
@@ -66,16 +61,14 @@ extract_arg_n (int *stack_pointer, int arg_num) {
 /* Extract the third argument and return it, not moving the pointer. */
 #define EXTRACT_ARG_3(stack_pointer) (extract_arg_n(stack_pointer, 3))
 
-/* Ensures all of a string is verified. */
-static bool
+/* This function ensures all parts of a string are verified. */
+static void
 verify_string (const char *str) {
   const char *ptr = str;
   int byte_count = 0;
 
   /* Verify the first byte. */
-  if (!verify((void *) ptr)) {
-    return false;
-  }
+  verify((void *) ptr);
 
   /* Loop through each byte .*/
   while (*ptr != '\0') {
@@ -84,36 +77,35 @@ verify_string (const char *str) {
 
     /* Prevent infinite looping on incorrectly formatted strings (no '\0'). */
     if (byte_count > MAX_STRING_LENGTH) {
-      return false;
+      exit_process_with_status(BAD_ARGUMENTS);
     }
 
     /* Verify byte if crossing into a new page. */
     if ((uint32_t) ptr % PGSIZE == 0) {
-      if (!verify((void *) ptr)) {
-        return false;
-      }
+      verify((void *) ptr);
     }
   }
 
   /* Verify the final byte. */ 
   verify((void *)ptr);
-  return true;
 }
 
-/* Ensures all of a buffer is verified. */
-static bool
+static void
 verify_buffer (const void *buffer, unsigned size) {
   const uint8_t *ptr = (const uint8_t *) buffer;
   const uint8_t *end = ptr + size;
 
-  /* Verify the necessary pointers between ptr and end. */
+  verify((void *) ptr);
+
+  /* Move pointer to next page boundary */
+  ptr = (const uint8_t *)(((uintptr_t)ptr + PGSIZE) & ~(PGSIZE - 1));
+
+  /* Iterate through each page boundary */
   while (ptr < end) {
-    if (!verify((void *) ptr)) {
-      return false;
-    }
-    ptr ++;
+      verify((void *) ptr);
+      ptr += PGSIZE;  /* Move to the next page boundary */
   }
-  return true;
+
 }
 
 /* Terminates PintOS. This should be seldom used, because you lose some
@@ -136,7 +128,8 @@ exec (struct intr_frame *f) {
   const char *cmd_line = (char *) EXTRACT_ARG_1((int *) f->esp);
   
   /* Ensure the cmd_line is correctly verified. */
-  if (!verify_string(cmd_line) || strlen(cmd_line) > PGSIZE) {
+  verify_string(cmd_line);
+  if (strlen(cmd_line) > PGSIZE) {
     f ->eax = (int32_t) BAD_ARGUMENTS;
     return;
   }
@@ -193,9 +186,9 @@ static void
 create (struct intr_frame *f) {
   const char *file_name = (char *) EXTRACT_ARG_1((int *) f->esp);
   unsigned initial_size = (unsigned) EXTRACT_ARG_2 ((int *) f->esp);
-
-  /* Verify arguments. */
-  if (initial_size > INT_MAX || !verify_string(file_name)) {
+  /* Replace 2nd & 3rd condition with string validate function */
+  verify_string(file_name);
+  if (initial_size > INT_MAX) {
     exit_process_with_status(BAD_ARGUMENTS);
   }
 
@@ -210,7 +203,8 @@ remove (struct intr_frame *f) {
   const char *file_name = (char *) EXTRACT_ARG_1((int *) f->esp);
 
   /* Verify file_name. */
-  if (!verify_string(file_name) || *file_name == '\0') {
+  verify_string(file_name);
+  if (*file_name == '\0') {
     f->eax = (int32_t) NOTHING;
     return;
   }
@@ -228,10 +222,10 @@ static void
 open (struct intr_frame *f) {
   const char *file_name = (char *) EXTRACT_ARG_1((int *) f->esp);
 
+  
   /* Verify arguments. */
-  if (!verify_string(file_name)) {
-    exit_process_with_status(BAD_ARGUMENTS);
-  }
+  verify_string(file_name);
+
 
   /* Does nothing and returns an error code if empty name. */
   if (*file_name == '\0') {
@@ -276,9 +270,7 @@ read (struct intr_frame *f) {
   unsigned size = (unsigned) EXTRACT_ARG_3 ((int *) f->esp);
 
   /* Check buffer is valid. */
-  if (!verify_buffer(buffer, size)) {
-    exit_process_with_status(BAD_ARGUMENTS);
-  }
+  verify_buffer(buffer, size);
 
   /* Read from the keyboard one character at a time if keyboard is indicated. */
   if (fd == KEYBOARD_FD) {
@@ -316,9 +308,7 @@ write (struct intr_frame *f) {
   unsigned size = (unsigned) EXTRACT_ARG_3 ((int *) f->esp);
 
   /* Check buffer is invalid. */
-  if (!verify_buffer(buffer, size)) {
-    exit_process_with_status(BAD_ARGUMENTS);
-  }
+  verify_buffer(buffer, size);
 
   /* Check size > 0, skip execution if so. */
   if (size == NOTHING) {
@@ -435,9 +425,7 @@ static void
 syscall_handler (struct intr_frame *f)
 {
   /* Verify stack pointer. */
-  if (!verify(f->esp)) {
-    exit_process_with_status(BAD_ARGUMENTS);
-  }
+  verify(f->esp);
 
   /* Unpack stack pointer and verify its value. */
   int stack_pointer_val = *((int *) f->esp);
