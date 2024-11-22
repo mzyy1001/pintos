@@ -209,7 +209,8 @@ struct file *fd_table_get (int);
 void fd_table_close (int);
 int fd_table_add (struct file*);
 void init_parent_child (struct thread *, struct thread *);
-struct thread * get_thread_by_tid (tid_t tid);
+struct thread * get_thread_by_tid (tid_t);
+void exit_process_with_error_code (int);
 #endif
 
 #endif /* threads/thread.h */

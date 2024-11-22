@@ -20,6 +20,8 @@
 #include "userprog/process.h"
 #include "filesys/file.h"
 #include "threads/malloc.h"
+#include <limits.h>
+
 /* Starting value for file descriptors, avoids 1 & 0 which are reserved. */
 #define FD_START_VALUE 2
 #endif
@@ -342,6 +344,19 @@ void init_parent_child (struct thread *child, struct thread *parent) {
   sema_init(&parent_child->child_loaded, 0);
 }
 
+/* Terminates the current user program, sending its exit status to the kernel.
+If the process’s parent waits for it, this is what will be returned. */
+void
+exit_process_with_error_code (int status) {
+  struct parent_child *parent_pach = thread_current()->parent;
+
+  sema_down(&parent_pach->sema);
+  parent_pach->child_exit_code = status;
+  sema_up(&parent_pach->sema);
+
+  thread_exit();
+}
+
 
 /* Puts the current thread to sleep.  It will not be scheduled
    again until awoken by thread_unblock().
@@ -441,7 +456,6 @@ thread_exit (void)
   intr_disable ();
   list_remove (&thread_current()->allelem);
   thread_current ()->status = THREAD_DYING;
-  // TODO(POSSIBLE MEMORY LEAK WITH THE LISTS HERE);
   schedule ();
   NOT_REACHED ();
 }
@@ -708,11 +722,15 @@ thread_update_load(void)
   load_avg = FLOAT_ADD(diminished_old_avg, change_avg);
 }
 
-/* Get the next available fd and increment the counter. */
+/* Get the next available fd and increment the counter, returns -1 if fds
+have hit been exhausted which should be a sign to kill the process. */
 static int
 thread_get_fd (void) {
   struct thread *t = thread_current();
   int next_fd = t->next_free_fd;
+  if (next_fd >= INT_MAX) {
+    return -1;
+  }
   t ->next_free_fd ++;
   return next_fd;
 }
@@ -723,26 +741,34 @@ int
 fd_table_add (struct file* file) {
   struct file_descriptor_element *new_fd = malloc(sizeof (struct file_descriptor_element));
 
-  /* Unable to allocate memory, operation fails. */
-  // TODO(Consider terminating the process in such a case)
+  /* Unable to allocate memory, kill the process to free memory. */
   if (new_fd == NULL) {
     synched_file_close(file);
-    return -1;
+    exit_process_with_error_code (-1);
   }
-  new_fd->fd = thread_get_fd();
+
+  /* Get an fd and if fds have been exhausted, kill the process. */
+  int available_fd = thread_get_fd();
+  if (available_fd == -1) {
+    synched_file_close(file);
+    free (new_fd);
+    exit_process_with_error_code (-1);
+  }
+
+  /* Add the file as an fd_element to the fd_table. */
+  new_fd->fd = available_fd;
   new_fd->file_pointer = file;
   struct hash *hash_table = &(thread_current()->file_descriptor_table);
   struct hash_elem *added_elem = hash_insert(hash_table, &(new_fd->hash_elem));
 
-  // TODO(May want to change implementation if added_elem is NULL e.g. to kill the program)
-  /* Equivilent element already in table. Very rare to occur due to the size of INT_MAX,
-  consider searching for memory corruption if this occurs in a process that hasn't run for 
-  a very long time. */
+  /* Equivilent element already in table. Should not occur, consider searching
+  for memory corruption if the function makes it into here. */
   if (added_elem != NULL) {
     synched_file_close(file);
     free (new_fd);
-    return -1;
+    exit_process_with_error_code (-1);
   }
+
   return new_fd->fd;
 }
 
@@ -761,20 +787,18 @@ fd_table_get (int fd) {
   return (hash_entry (result, struct file_descriptor_element, hash_elem)->file_pointer);
 }
 
-/* Takes a fd and closes it. */
-// TODO(Consider changing the implementation to return 1 on success or something like that
-// this would allow for a different response to no matching result e.g. killing the proccess)
+/* Takes a fd and closes it's file, doesn't return if it was successfull or not. */
 void
 fd_table_close (int fd) {
   struct hash *hash_table = &(thread_current()->file_descriptor_table);
   struct file_descriptor_element temp_elem;
   temp_elem.fd = fd;
   struct hash_elem *result = hash_delete(hash_table, &(temp_elem.hash_elem));
-  /* No open entry matching fd found.*/
-  if (result == NULL) {
-    return;
+  
+  /* Open entry matching fd found and can be closed. */
+  if (result != NULL) {
+    fd_hash_elem_free (result, NULL);
   }
-  fd_hash_elem_free (result, NULL);
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -1041,16 +1065,16 @@ allocate_tid (void)
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
-/*return a thread with a tid*/
+/* Return the thread with a given tid. */
 struct thread *
 get_thread_by_tid(tid_t tid)
 {
-    struct list_elem *e;
-    for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
-        struct thread *t = list_entry(e, struct thread, allelem);
-        if (t->tid == tid) {
-            return t;
-        }
+  struct list_elem *e;
+  for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
+    struct thread *t = list_entry(e, struct thread, allelem);
+    if (t->tid == tid) {
+      return t;
     }
-    return NULL; // Thread not found
+  }
+  return NULL;
 }
