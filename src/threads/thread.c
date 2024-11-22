@@ -330,11 +330,11 @@ tid_t
 void init_parent_child (struct thread *child, struct thread *parent) {
   struct parent_child *parent_child = malloc (sizeof(struct parent_child));
   parent_child->child_tid = child->tid;
-  parent_child->parent_exit = false;
-  parent_child->child_exit = false;
+  parent_child->parent_dead = false;
+  parent_child->child_dead = false;
   parent_child->child_exit_code = -1; /* initialised to -1. exit syscall will modify it*/
   sema_init(&parent_child->sema, 1);
-  parent_child->wait = false;
+  parent_child->been_waited_on = false;
   sema_init(&parent_child->waiting, 0);
 
   /* pointers from threads to parent_child */
@@ -347,7 +347,7 @@ void init_parent_child (struct thread *child, struct thread *parent) {
 /* Terminates the current user program, sending its exit status to the kernel.
 If the process’s parent waits for it, this is what will be returned. */
 void
-exit_process_with_error_code (int status) {
+exit_process_with_status (int status) {
   struct parent_child *parent_pach = thread_current()->parent;
 
   sema_down(&parent_pach->sema);
@@ -744,7 +744,7 @@ fd_table_add (struct file* file) {
   /* Unable to allocate memory, kill the process to free memory. */
   if (new_fd == NULL) {
     synched_file_close(file);
-    exit_process_with_error_code (-1);
+    exit_process_with_status (-1);
   }
 
   /* Get an fd and if fds have been exhausted, kill the process. */
@@ -752,7 +752,7 @@ fd_table_add (struct file* file) {
   if (available_fd == -1) {
     synched_file_close(file);
     free (new_fd);
-    exit_process_with_error_code (-1);
+    exit_process_with_status (-1);
   }
 
   /* Add the file as an fd_element to the fd_table. */
@@ -766,7 +766,7 @@ fd_table_add (struct file* file) {
   if (added_elem != NULL) {
     synched_file_close(file);
     free (new_fd);
-    exit_process_with_error_code (-1);
+    exit_process_with_status (-1);
   }
 
   return new_fd->fd;
@@ -1064,17 +1064,3 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
-
-/* Return the thread with a given tid. */
-struct thread *
-get_thread_by_tid(tid_t tid)
-{
-  struct list_elem *e;
-  for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
-    struct thread *t = list_entry(e, struct thread, allelem);
-    if (t->tid == tid) {
-      return t;
-    }
-  }
-  return NULL;
-}

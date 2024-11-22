@@ -55,19 +55,19 @@ struct file_descriptor_element{
   struct hash_elem hash_elem;    /* Hash element to allow addition to hash tables. */
 };
 
-/* Used to mediate parent-child pointers */
+/* Used to mediate parent-child data and ensure synchronisatino between them. */
 struct parent_child
 {
    tid_t child_tid;                 /* Child's TID, used in get_child_pach to find the child. */
-   struct list_elem child_elem;     /* List element for this to be in a thread's children list. */
-   bool parent_exit;
-   bool child_exit;
-   int child_exit_code;
-   struct semaphore sema;           /* Semaphore to ensure access synchronisation to this. */
-   bool wait;                       /* Stores if wait has been called, used to limit to 1 call. */
-   struct semaphore waiting;        /* to signal to parent child has exited*/
+   int child_exit_code;             /* Stores the child's exit code, defaults to -1. */
+   bool parent_dead;                /* Stores if the parent is dead, used to avoid memory leaks. */
+   bool child_dead;                 /* Stores if the child is dead, used to avoid memory leaks. */
+   bool been_waited_on;             /* Stores if wait has been called, used to limit to 1 call. */
    bool child_load_success;         /* Stores if the child loaded successfully. */
+   struct semaphore sema;           /* Semaphore to ensure access synchronisation to this. */
+   struct semaphore waiting;        /* Signals to parent that child died. */
    struct semaphore child_loaded;   /* to signal to parent child has loaded (successfully or not)*/
+   struct list_elem child_elem;     /* List element for this to be in a thread's children list. */
    };
 
 /* A kernel thread or user process.
@@ -209,8 +209,7 @@ struct file *fd_table_get (int);
 void fd_table_close (int);
 int fd_table_add (struct file*);
 void init_parent_child (struct thread *, struct thread *);
-struct thread * get_thread_by_tid (tid_t);
-void exit_process_with_error_code (int);
+void exit_process_with_status (int);
 #endif
 
 #endif /* threads/thread.h */

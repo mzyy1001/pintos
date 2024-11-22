@@ -43,7 +43,7 @@ typedef void (syscall_t) (struct intr_frame *);
 static bool
 verify (void *vaddr) {
   if (vaddr == NULL || !is_user_vaddr(vaddr) || pagedir_get_page(thread_current()->pagedir, vaddr) == NULL) {
-    exit_process_with_error_code(BAD_ARGUMENTS);
+    exit_process_with_status(BAD_ARGUMENTS);
   }
   return true;
 }
@@ -124,7 +124,7 @@ halt (struct intr_frame *aux UNUSED) {
 /* Wraps exit allowing it to be called by the syscall handler. */
 static void
 sys_exit (struct intr_frame *f) {
-  exit_process_with_error_code(EXTRACT_ARG_1((int *) f->esp));
+  exit_process_with_status(EXTRACT_ARG_1((int *) f->esp));
 }
 
 /* Runs the executable whose name is given in cmd line, passing any given
@@ -192,7 +192,7 @@ create (struct intr_frame *f) {
   unsigned initial_size = (unsigned) EXTRACT_ARG_2 ((int *) f->esp);
   /* Replace 2nd & 3rd condition with string validate function */
   if (initial_size > INT_MAX || !verify_string(file_name)) {
-    exit_process_with_error_code(BAD_ARGUMENTS);
+    exit_process_with_status(BAD_ARGUMENTS);
   }
   f->eax = (int32_t) synched_filesys_create(file_name, (off_t) initial_size);
 }
@@ -222,7 +222,7 @@ open (struct intr_frame *f) {
   const char *file_name = (char *) EXTRACT_ARG_1((int *) f->esp);
   /* Replace condition with string validate function */
   if (!verify_string(file_name)) {
-    exit_process_with_error_code(BAD_ARGUMENTS);
+    exit_process_with_status(BAD_ARGUMENTS);
   }
   if (*file_name == '\0') {
     f->eax = (int32_t) BAD_ARGUMENTS;
@@ -262,7 +262,7 @@ read (struct intr_frame *f) {
 
   /* Check buffer is valid. */
   if (!verify_buffer(buffer, size)) {
-    exit_process_with_error_code(BAD_ARGUMENTS);
+    exit_process_with_status(BAD_ARGUMENTS);
   }
 
   /* Read from the keyboard one character at a time if keyboard is indicated. */
@@ -302,7 +302,7 @@ write (struct intr_frame *f) {
 
   /* Check buffer is invalid. */
   if (!verify_buffer(buffer, size)) {
-    exit_process_with_error_code(BAD_ARGUMENTS);
+    exit_process_with_status(BAD_ARGUMENTS);
   }
 
   /* Check size > 0, skip execution if so. */
@@ -419,12 +419,12 @@ static void
 syscall_handler (struct intr_frame *f)
 {
   if (!verify(f->esp)) {
-    exit_process_with_error_code(BAD_ARGUMENTS);
+    exit_process_with_status(BAD_ARGUMENTS);
   }
 
   int *stack_pointer = f->esp;
   if (*stack_pointer < 0 || *stack_pointer >= NUMBER_OF_SYSCALLS) {
-    exit_process_with_error_code(BAD_ARGUMENTS);
+    exit_process_with_status(BAD_ARGUMENTS);
   }
 
   syscalls[*stack_pointer](f);

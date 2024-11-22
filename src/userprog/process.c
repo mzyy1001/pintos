@@ -169,9 +169,9 @@ process_wait (tid_t child_tid)
 
   /* check if parent called this on the same tiD
     if it did, it would have waited for child to up the waiting semaphore
-    by then the child has already set child_exit to true */
+    by then the child has already set child_dead to true */
   
-  if (child_pach->wait == true) {
+  if (child_pach->been_waited_on) {
     return -1;
   }
 
@@ -179,7 +179,7 @@ process_wait (tid_t child_tid)
   this is not needed, as wait is only used by parent thread.
   however, we keep it synchronised for future-proofing */ 
   sema_down(&child_pach->sema);
-  child_pach->wait = true;
+  child_pach->been_waited_on = true;
   sema_up(&child_pach->sema);
 
   sema_down(&child_pach->waiting);      /* wait for child to exit*/
@@ -204,14 +204,14 @@ process_exit (void)
     sema_down(&parent_pach->sema);
     printf("%s: exit(%d)\n", cur->name, parent_pach->child_exit_code);
 
-    if (parent_pach->parent_exit)
+    if (parent_pach->parent_dead)
     {
       free(parent_pach);
       parent_pach = NULL;
     }
     else
     {
-      parent_pach->child_exit = true;
+      parent_pach->child_dead = true;
       sema_up(&parent_pach->waiting);
       sema_up(&parent_pach->sema);
     }
@@ -225,11 +225,11 @@ process_exit (void)
     struct parent_child *child_pach = list_entry(e, struct parent_child, child_elem);
     sema_down(&child_pach->sema);
 
-    if (child_pach->child_exit) {
+    if (child_pach->child_dead) {
       e = list_remove(e);
       free(child_pach);
     } else {
-      child_pach->parent_exit = true;
+      child_pach->parent_dead = true;
       //No need to up waiting
       sema_up(&child_pach->sema);
       e = list_next(e); 
