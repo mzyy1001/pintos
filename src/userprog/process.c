@@ -49,7 +49,7 @@ process_execute (const char *arguments)
   char *save_ptr;
 
   /* Make a single copy of arguments to avoid race conditions. */
-  args_copy = palloc_get_page(0);
+  args_copy = palloc_get_page(PAL_ZERO);
   if (args_copy == NULL) {
     return TID_ERROR;
   }

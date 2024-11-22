@@ -138,7 +138,7 @@ exec (struct intr_frame *f) {
   }
 
   /* Make a copy of the command line. */
-  char *cmd_copy = palloc_get_page(0);
+  char *cmd_copy = palloc_get_page(PAL_ZERO);
   if (cmd_copy == NULL) {
     f ->eax = (int32_t) MEMORY_ALLOCATION_ERROR;
     return;
