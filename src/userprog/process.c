@@ -21,11 +21,17 @@ static bool load (void *args_, const char *cmdline, void (**eip) (void), void **
 static bool setup_stack (void **esp, void *args_, char *file_name);
 struct parent_child *get_child_pach(tid_t c_tid);
 
-/* Verifies that the stack pointer (`esp`) remains within safe
-memory bounds to prevent stack overflow. */
+/* Checks if the stack pointer (`esp`) is within safe memory bounds to prevent stack overflow. */
+static bool
+stack_overflowing (uint8_t *esp) {
+    return (esp < (uint8_t *)PHYS_BASE - PGSIZE);
+}
+
+/* Wraps a check of esp so that if it is not 
+in safe bounds the correct actions can be taken. */
 #define CHECK_STACK_OVERFLOW(esp) \
   do { \
-    if ((uint8_t *) (esp) < (uint8_t *) PHYS_BASE - PGSIZE) { \
+    if (stack_overflowing(esp)) { \
       success = false; \
       goto done; \
     } \
@@ -607,7 +613,7 @@ setup_stack (void **esp, void *args_, char *file_name)
 {
   char *save_ptr = NULL;
   ASSERT(file_name != NULL);
-  uint8_t *kpage;
+  uint8_t *kpage = NULL;
   bool success = false;
   char **argv = malloc(MAX_ARGS * sizeof(char *));
   if (argv == NULL)
@@ -624,7 +630,7 @@ setup_stack (void **esp, void *args_, char *file_name)
     {
       *esp = PHYS_BASE;
 
-      // Push arguments onto the stack
+      /* Push arguments onto the stack. */ 
       char *args = args_;
       size_t args_size = 0;
       int argc = 0;
@@ -639,7 +645,7 @@ setup_stack (void **esp, void *args_, char *file_name)
           goto done;
         }
         args_size += arg_len + ((uintptr_t)(*esp) % 4);
-        if ((uint8_t *)*esp < (uint8_t *)PHYS_BASE - PGSIZE) {
+        if (stack_overflowing((uint8_t *) *esp)) {
           success = false;
           goto done;
         }
@@ -648,7 +654,8 @@ setup_stack (void **esp, void *args_, char *file_name)
         
         arg = strtok_r(NULL, " ", &save_ptr);
       }
-      // Word-align the stack
+
+      /* Word-align the stack. */
       uintptr_t align = (uintptr_t)(*esp) % 4;
       if (align)
       {
@@ -656,15 +663,18 @@ setup_stack (void **esp, void *args_, char *file_name)
         CHECK_STACK_OVERFLOW(*esp);
         memset(*esp, 0, align);
       }
-      // Push argument addresses
-      argv[argc] = NULL; // Null-terminate argv
+
+      /* Push argument addresses */ 
+      /* Null-terminate argv. */
+      argv[argc] = NULL;
       for (int i = argc; i >= 0; i--)
       {
         *esp -= sizeof(char *);
         CHECK_STACK_OVERFLOW(*esp);
         memcpy(*esp, &argv[i], sizeof(char *));
       }
-      // Push argv and argc
+
+      /* Push argv and argc. */
       char **argv_ptr = *esp;
       *esp -= sizeof(char **);
       CHECK_STACK_OVERFLOW(*esp);
@@ -673,7 +683,7 @@ setup_stack (void **esp, void *args_, char *file_name)
       CHECK_STACK_OVERFLOW(*esp);
       *(int *)*esp = argc;
 
-      // Push a fake return address
+      /* Push a fake return address. */ 
       *esp -= sizeof(void *);
       CHECK_STACK_OVERFLOW(*esp);
       *(void **)*esp = 0;
