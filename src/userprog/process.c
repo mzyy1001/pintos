@@ -622,120 +622,118 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   return true;
 }
 
-/* Create a minimal stack by mapping a zeroed page at the top of
-   user virtual memory. */
+/* Helper function to check stack overflow and adjust stack pointer. */
 static bool
-setup_stack (void **esp, void *args_, char *file_name)
+adjust_stack(void **esp, size_t size)
+{
+  *esp -= size;
+  if (stack_overflowing((uint8_t *)*esp))
+  {
+    return false;
+  }
+  return true;
+}
+
+/* Helper function to push data onto the stack. */
+static bool
+push_to_stack(void **esp, const void *data, size_t size)
+{
+  if (!adjust_stack(esp, size))
+  {
+    return false;
+  }
+  memcpy(*esp, data, size);
+  return true;
+}
+
+/* Helper function to push arguments onto the stack and store their addresses. */
+static bool
+push_arguments(void **esp, char *args, char *argv[], int *argc)
 {
   char *save_ptr = NULL;
-  ASSERT(file_name != NULL);
-  uint8_t *kpage = NULL;
-  bool success = false;
+  char *arg = strtok_r(args, " ", &save_ptr);
 
-  /* Allocate memory for argv to store arguments. */
-  char *argv[MAX_ARGS];
-  
-  /* Allocate a clean page for the stack. */
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-  if (kpage != NULL)
+  /* Push each argument onto the stack. */
+  while (arg != NULL)
   {
-    /* Try install it it at the top of memory. */
-    success = install_page(((uint8_t *)PHYS_BASE) - PGSIZE, kpage, true);
-    if (success)
+    size_t arg_len = strlen(arg) + 1;
+    if (*argc >= MAX_ARGS)
     {
-      *esp = PHYS_BASE;
-
-      /* Push arguments onto the stack in reverse order. */ 
-      char *args = args_;
-      size_t args_size = 0;
-      int argc = 0;
-      char *arg = strtok_r(args, " ", &save_ptr);
-
-      /* Tokenise the arguments string and push each onto the stack. */
-      while (arg != NULL)
-      {
-        size_t arg_len = strlen(arg) + 1;
-        *esp -= strlen(arg) + 1;
-        
-        /* Ensure MAX_ARGS is not exceeded. */
-        if (argc >= MAX_ARGS) {
-          success = false;
-          goto done;
-        }
-
-        /* Update the total size of arguments (includes alignment). */
-        args_size += arg_len + ((uintptr_t)(*esp) % WORD_SIZE);
-
-        /* Check for stack overflow to prevent the stack 
-        pointer entering incorrect memory locations. */
-        CHECK_STACK_OVERFLOW(*esp);
-
-        /* Add argument to the stack. */
-        memcpy(*esp, arg, strlen(arg) + 1);
-        argv[argc++] = *esp;
-        
-        /* Get the next argument for repeat. */
-        arg = strtok_r(NULL, " ", &save_ptr);
-      }
-
-      /* Word-align the stack. */
-      uintptr_t align = (uintptr_t)(*esp) % WORD_SIZE;
-      if (align)
-      {
-        *esp -= align;
-        CHECK_STACK_OVERFLOW(*esp);
-        memset(*esp, 0, align);
-      }
-
-
-      /* Null-terminate argv. */
-      argv[argc] = NULL;
-      
-      /* Push argument addresses onto the stack. */ 
-      for (int i = argc; i >= 0; i--)
-      {
-        *esp -= sizeof(char *);
-        CHECK_STACK_OVERFLOW(*esp);
-        memcpy(*esp, &argv[i], sizeof(char *));
-      }
-
-      /* Push argv onto the stack. */
-      char **argv_ptr = *esp;
-      *esp -= sizeof(char **);
-      CHECK_STACK_OVERFLOW(*esp);
-      memcpy(*esp, &argv_ptr, sizeof(char **));
-
-      /* Push argc onto the stack. */
-      *esp -= sizeof(int);
-      CHECK_STACK_OVERFLOW(*esp);
-      *(int *)*esp = argc;
-
-      /* Push a fake return address onto the stack. */ 
-      *esp -= sizeof(void *);
-      CHECK_STACK_OVERFLOW(*esp);
-      *(void **)*esp = 0;
+      return false; // Exceeding the maximum allowed arguments
     }
-    else
+    if (!push_to_stack(esp, arg, arg_len))
     {
-      /* If installing the page fails clean up the page. */
-      printf("setup_stack: Cleaning up stack page at %p\n", kpage);
-      palloc_free_page(kpage);
-      kpage = NULL;
-      goto done;
+      return false;
     }
+    argv[(*argc)++] = *esp; // Store address of the argument
+    arg = strtok_r(NULL, " ", &save_ptr);
   }
 
-  /* If the setup was unsuccessfull in any way clean up everything. */
-  done:
-  if (!success && kpage != NULL)
+  /* Word-align the stack. */
+  uintptr_t align = (uintptr_t)(*esp) % WORD_SIZE;
+  if (align && !adjust_stack(esp, align))
+  {
+    return false;
+  }
+  memset(*esp, 0, align); // Add padding for alignment
+
+  /* Null-terminate argv. */
+  argv[*argc] = NULL;
+
+  return true;
+}
+
+/* Setup stack refactored with helper functions. */
+static bool
+setup_stack(void **esp, void *args_, char *file_name)
+{
+  ASSERT(file_name != NULL);
+  uint8_t *kpage = palloc_get_page(PAL_USER | PAL_ZERO);
+  if (!kpage)
+  {
+    return false;
+  }
+
+  if (!install_page(((uint8_t *)PHYS_BASE) - PGSIZE, kpage, true))
   {
     palloc_free_page(kpage);
-    void *upage = ((uint8_t *)PHYS_BASE) - PGSIZE;
-    pagedir_clear_page(thread_current()->pagedir, upage);
-    kpage = NULL;
+    return false;
   }
 
-  return success;
+  *esp = PHYS_BASE;
+  char *argv[MAX_ARGS];
+  int argc = 0;
+
+  /* Push arguments onto the stack. */
+  if (!push_arguments(esp, (char *)args_, argv, &argc))
+  {
+    goto cleanup;
+  }
+
+  /* Push argument addresses onto the stack. */
+  for (int i = argc; i >= 0; i--)
+  {
+    if (!push_to_stack(esp, &argv[i], sizeof(char *)))
+    {
+      goto cleanup;
+    }
+  }
+
+  /* Push argv, argc, and fake return address. */
+  char **argv_ptr = *esp;
+  if (!push_to_stack(esp, &argv_ptr, sizeof(char **)) ||
+      !push_to_stack(esp, &argc, sizeof(int)) ||
+      !push_to_stack(esp, &(void *){NULL}, sizeof(void *)))
+  {
+    goto cleanup;
+  }
+
+  return true;
+
+cleanup:
+  palloc_free_page(kpage);
+  pagedir_clear_page(thread_current()->pagedir, ((uint8_t *)PHYS_BASE) - PGSIZE);
+  return false;
 }
 
 /* Adds a mapping from user virtual address UPAGE to kernel
