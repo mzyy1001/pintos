@@ -531,7 +531,8 @@ Start page must be lower than end page or no pages will be cleaned. */
 static void
 cleanup_allocated_pages (uint8_t *start_upage, uint8_t *end_upage) {
   struct thread *t = thread_current();
-
+  start_upage = (uint8_t *) ROUND_DOWN((uintptr_t) start_upage, PGSIZE);
+  end_upage = (uint8_t *) ROUND_UP((uintptr_t) end_upage, PGSIZE);
   /* Loop through each page, clearing & freeing it. */
   while (start_upage < end_upage) {
     void *kpage = pagedir_get_page(t->pagedir, start_upage);
