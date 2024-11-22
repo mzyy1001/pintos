@@ -17,9 +17,9 @@
 /* Number of syscalls implemented that the syscall handler can call. */
 #define NUMBER_OF_SYSCALLS 13
 /* Syscall exit code when an operation with the parent_child struct fails. */
-#define PARENT_CHILD_ERROR (-1)
+#define PARENT_CHILD_ERROR ERROR_RETURN
 /* Syscall exit code when a (filesys/process)_{name} function doesn't run as intended. */
-#define FUNCTION_ERROR (-1)
+#define FUNCTION_ERROR ERROR_RETURN
 /* Max string argument length to prevent incorrectly structured strings infinite looping. */
 #define MAX_STRING_LENGTH (2 << 20)
 /* Syscall return code for return that 0 of whatever was 
@@ -63,7 +63,7 @@ extract_arg_n (int *stack_pointer, int arg_num) {
 static void
 verify_string (const char *str) {
   const char *ptr = str;
-  int byte_count = NOTHING;
+  int byte_count = 0;
 
   /* Verify the first byte. */
   verify((void *) ptr);
@@ -273,7 +273,7 @@ read (struct intr_frame *f) {
 
   /* Read from the keyboard one char at a time if KEYBOARD_FD is indicated. */
   if (fd == KEYBOARD_FD) {
-    unsigned bytes_read = NOTHING;
+    unsigned bytes_read = 0;
     char *buf = buffer;
     acquire_filesys();
     for (unsigned i = 0; i < size; i++) {
@@ -316,7 +316,7 @@ write (struct intr_frame *f) {
   } 
 
   /* Write to the console in BUFFER_CHUNK_SIZEs if CONSOLE_FD is indicated. */
-  int bytes_written = NOTHING;
+  int bytes_written = 0;
   if (fd == CONSOLE_FD) {
     unsigned remaining = size;
     const char *buf = buffer;

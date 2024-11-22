@@ -21,10 +21,12 @@
 #include "filesys/file.h"
 #include "threads/malloc.h"
 #include <limits.h>
+#endif 
 
-/* Starting value for file descriptors, avoids 1 & 0 which are reserved. */
-#define FD_START_VALUE 2
-#endif
+/* Return code if fds have been exhausted. */
+#define FDS_EXHAUSTED ERROR_RETURN
+/* Number of parallel accesses to a parent-child struct. */
+#define PC_CONCURRENT_ACCESSES 1
 
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
@@ -139,6 +141,23 @@ thread_init (void)
   initial_thread->tid = allocate_tid ();
 }
 
+
+/* Returns the hash of the file_descriptor_element. */
+static unsigned
+fd_elem_hash (const struct hash_elem *a, void *aux UNUSED)
+{
+  return hash_int((hash_entry(a, struct file_descriptor_element, hash_elem))->fd);
+}
+
+/* Compares 2 file descriptor elements using their fds. */
+static bool
+fd_elem_less (const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED) {
+  return (
+    hash_entry(a, struct file_descriptor_element, hash_elem)->fd > 
+      hash_entry(b, struct file_descriptor_element, hash_elem)->fd
+  );
+}
+
 /* Starts preemptive thread scheduling by enabling interrupts.
    Also creates the idle thread. */
 void
@@ -148,6 +167,11 @@ thread_start (void)
   struct semaphore idle_started;
   sema_init (&idle_started, 0);
   thread_create ("idle", PRI_MIN, idle, &idle_started);
+  
+  #ifdef USERPROG
+  /* Fully initialise the fd hash table. */
+  hash_init(&((thread_current())->file_descriptor_table), &fd_elem_hash, &fd_elem_less, NULL);
+  #endif
 
   /* Start preemptive thread scheduling. */
   intr_enable ();
@@ -239,23 +263,6 @@ thread_print_stats (void)
           idle_ticks, kernel_ticks, user_ticks);
 }
 
-/* Returns the hash of the file_descriptor_element. */
-static unsigned
-fd_elem_hash (const struct hash_elem *a, void *aux UNUSED)
-{
-  return hash_int((hash_entry(a, struct file_descriptor_element, hash_elem))->fd);
-}
-
-/* Compares 2 file descriptor elements using their fds. */
-static bool
-fd_elem_less (const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED) {
-  return (
-    hash_entry(a, struct file_descriptor_element, hash_elem)->fd > 
-      hash_entry(b, struct file_descriptor_element, hash_elem)->fd
-  );
-}
-
-
 /* Creates a new kernel thread named NAME with the given initial
    PRIORITY, which executes FUNCTION passing AUX as the argument,
    and adds it to the ready queue.  Returns the thread identifier
@@ -338,13 +345,13 @@ void init_parent_child (struct thread *child, struct thread *parent) {
 
   /* Initialise the fields*/
   parent_child->child_tid = child->tid;
+  parent_child->child_exit_code = ERROR_RETURN; 
   parent_child->parent_dead = false;
   parent_child->child_dead = false;
-  parent_child->child_exit_code = -1; 
   parent_child->been_waited_on = false;
   
   /* Initialise the semaphores. */
-  sema_init(&parent_child->sema, 1);
+  sema_init(&parent_child->sema, PC_CONCURRENT_ACCESSES);
   sema_init(&parent_child->waiting, 0);
   sema_init(&parent_child->child_loaded, 0);
   
@@ -743,7 +750,7 @@ thread_get_fd (void) {
 
   /* Returns an invalid fd if all available fds are exhausted. */
   if (next_fd >= INT_MAX) {
-    return -1;
+    return FDS_EXHAUSTED;
   }
 
   /* Otherwise increment the next available fd and return a valid fd. */
@@ -760,15 +767,15 @@ fd_table_add (struct file* file) {
   /* Unable to allocate memory, kill the process to free memory. */
   if (new_fd == NULL) {
     synched_file_close(file);
-    exit_process_with_status (-1);
+    exit_process_with_status (MEMORY_ALLOCATION_ERROR);
   }
 
   /* Get an fd, if fds have been exhausted, kill the process. */
   int available_fd = thread_get_fd();
-  if (available_fd == -1) {
+  if (available_fd == FDS_EXHAUSTED) {
     synched_file_close(file);
     free (new_fd);
-    exit_process_with_status (-1);
+    exit_process_with_status (FDS_EXHAUSTED);
   }
 
   /* Add the file as an fd_element to the fd_table. */
@@ -782,7 +789,7 @@ fd_table_add (struct file* file) {
   if (added_elem != NULL) {
     synched_file_close(file);
     free (new_fd);
-    exit_process_with_status (-1);
+    exit_process_with_status (BAD_ARGUMENTS);
   }
 
   return new_fd->fd;
@@ -913,7 +920,7 @@ init_thread (struct thread *t, const char *name, int priority)
     t->nice = 0;
   }
   #ifdef USERPROG
-    t->next_free_fd = FD_START_VALUE;
+    t->next_free_fd = FD_MIN_VALUE;
   #endif
   
   t->status = THREAD_BLOCKED;

@@ -45,14 +45,14 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
-#ifdef USERPROG
+/* Return code for all errors. */
+#define ERROR_RETURN (-1)
 /* Starting value for file descriptors, avoids 1 & 0 which are reserved. */
 #define FD_MIN_VALUE 2
 /* Exit code when given bad (invalid or out of range) arguments. */
-#define BAD_ARGUMENTS (-1)
+#define BAD_ARGUMENTS ERROR_RETURN
 /* Syscall exit code when a memory allocation fails. */
-#define MEMORY_ALLOCATION_ERROR (-1)
-#endif
+#define MEMORY_ALLOCATION_ERROR ERROR_RETURN
 
 /* An entry into the file descriptor table. */
 struct file_descriptor_element{
