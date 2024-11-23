@@ -40,7 +40,9 @@ typedef void (syscall_t) (struct intr_frame *);
 /* Used to ensure safe memory access by verifying a pointer pre-dereference. */
 static void
 verify (void *vaddr) {
-  if (vaddr == NULL || !is_user_vaddr(vaddr) || pagedir_get_page(thread_current()->pagedir, vaddr) == NULL) {
+  if (vaddr == NULL || 
+      !is_user_vaddr(vaddr) || 
+      pagedir_get_page(thread_current()->pagedir, vaddr) == NULL) {
     exit_process_with_status(BAD_ARGUMENTS);
   }
 }
@@ -415,7 +417,8 @@ close (struct intr_frame *f) {
 /* List of function pointers of the syscalls with each at their value's 
 position to allow for indexing in into syscalls in syscall_handler. */
 static syscall_t *syscalls[NUMBER_OF_SYSCALLS] = {
-  &halt, &sys_exit, &exec, &wait, &create, &remove, &open, &filesize, &read, &write, &seek, &tell, &close
+  &halt, &sys_exit, &exec, &wait, &create, &remove, &open, 
+  &filesize, &read, &write, &seek, &tell, &close
 };
 
 /* Verifies an interrupt frams's stack pointer and then delegates

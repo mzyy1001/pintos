@@ -450,7 +450,8 @@ thread_tid (void)
 /* Frees the file_descriptor_element of, and closes the file of, the given hash element. */
 static void
 fd_hash_elem_free (struct hash_elem *e, void *aux UNUSED) {
-  struct file_descriptor_element * elem_to_free = hash_entry(e, struct file_descriptor_element, hash_elem);
+  struct file_descriptor_element *elem_to_free = 
+    hash_entry(e, struct file_descriptor_element, hash_elem);
   synched_file_close(elem_to_free->file_pointer);
   free(elem_to_free);
 }
