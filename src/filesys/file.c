@@ -54,8 +54,6 @@ file_close (struct file *file)
     }
 }
 
-
-
 /* Returns the inode encapsulated by FILE. */
 struct inode *
 file_get_inode (struct file *file) 

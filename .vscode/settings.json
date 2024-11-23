@@ -1,0 +1,11 @@
+{
+    "C_Cpp.default.defines": [
+        "USERPROG"
+    ],
+    "files.associations": {
+        "limits.h": "c",
+        "file.h": "c",
+        "input.h": "c",
+        "filesys.h": "c"
+    }
+}

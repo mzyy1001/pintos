@@ -8,10 +8,6 @@
 #include <hash.h>
 #include "devices/timer.h"
 
-#ifndef USERPROG
-   #define USERPROG
-#endif
-
 #define MAX_FILES 31
 
 extern f_point load_avg;
