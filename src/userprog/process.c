@@ -23,22 +23,10 @@ struct parent_child *get_child_pach(tid_t c_tid);
 
 /* The number of bytes in one word of data. */
 #define WORD_SIZE 4
-
-/* Checks if the stack pointer (`esp`) is within safe memory bounds to prevent stack overflow. */
-static bool
-stack_overflowing (uint8_t *esp) {
-    return (esp < (uint8_t *)PHYS_BASE - PGSIZE);
-}
-
-/* Wraps a check of esp so that if it is not 
-in safe bounds the correct actions can be taken. */
-#define CHECK_STACK_OVERFLOW(esp) \
-  do { \
-    if (stack_overflowing(esp)) { \
-      success = false; \
-      goto done; \
-    } \
-  } while (0)
+/* Return for a boolean function that did not complete successfully. */
+#define PROCESS_FAILIURE false;
+/* Return for a boolean function that did complete successfully. */
+#define PROCESS_SUCCESSFULL true;
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -527,12 +515,14 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
 }
 
 /* Cleans up and frees all allocated pages within the specified user address range. 
-Start page must be lower than end page or no pages will be cleaned. */
+WARNINGS: Start page must be lower than end page or no pages will be cleaned. Start 
+and end pages will be entirely cleaned no matter where the pointers are. */
 static void
 cleanup_allocated_pages (uint8_t *start_upage, uint8_t *end_upage) {
   struct thread *t = thread_current();
   start_upage = (uint8_t *) ROUND_DOWN((uintptr_t) start_upage, PGSIZE);
   end_upage = (uint8_t *) ROUND_UP((uintptr_t) end_upage, PGSIZE);
+
   /* Loop through each page, clearing & freeing it. */
   while (start_upage < end_upage) {
     void *kpage = pagedir_get_page(t->pagedir, start_upage);
@@ -622,31 +612,29 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   return true;
 }
 
-/* Helper function to check stack overflow and adjust stack pointer. */
+/* Helper function for setup stack. Adjusts stack pointer and checks stack overflow. */
 static bool
 adjust_stack(void **esp, size_t size)
 {
   *esp -= size;
-  if (stack_overflowing((uint8_t *)*esp))
-  {
-    return false;
-  }
-  return true;
+
+  /* Returns if the stack pointer (`esp`) is in safe memory bounds to prevent stack overflow. */
+  return (((uint8_t *) *esp) >= ((uint8_t *) PHYS_BASE - PGSIZE));
 }
 
-/* Helper function to push data onto the stack. */
+/* Helper function for setup stack. Pushes data onto the stack, returns if push was successfull. */
 static bool
 push_to_stack(void **esp, const void *data, size_t size)
 {
   if (!adjust_stack(esp, size))
   {
-    return false;
+    return PROCESS_FAILIURE;
   }
   memcpy(*esp, data, size);
-  return true;
+  return PROCESS_SUCCESSFULL;
 }
 
-/* Helper function to push arguments onto the stack and store their addresses. */
+/* Helper function for setup stack. Push arguments onto the stack and stores their addresses. */
 static bool
 push_arguments(void **esp, char *args, char *argv[], int *argc)
 {
@@ -657,15 +645,15 @@ push_arguments(void **esp, char *args, char *argv[], int *argc)
   while (arg != NULL)
   {
     size_t arg_len = strlen(arg) + 1;
-    if (*argc >= MAX_ARGS)
+
+    /* Maximum number of arguments exceeded, or failed to push to stack. */
+    if (*argc >= MAX_ARGS || (!push_to_stack(esp, arg, arg_len)))
     {
-      return false; // Exceeding the maximum allowed arguments
+      return PROCESS_FAILIURE;
     }
-    if (!push_to_stack(esp, arg, arg_len))
-    {
-      return false;
-    }
-    argv[(*argc)++] = *esp; // Store address of the argument
+
+    /* Store current argument's address and get the next argument. */
+    argv[(*argc)++] = *esp;
     arg = strtok_r(NULL, " ", &save_ptr);
   }
 
@@ -673,44 +661,48 @@ push_arguments(void **esp, char *args, char *argv[], int *argc)
   uintptr_t align = (uintptr_t)(*esp) % WORD_SIZE;
   if (align && !adjust_stack(esp, align))
   {
-    return false;
+    return PROCESS_FAILIURE;
   }
-  memset(*esp, 0, align); // Add padding for alignment
 
-  /* Null-terminate argv. */
+  /* Add padding for alignment and NULL-terminate argv. */
+  memset(*esp, 0, align);
   argv[*argc] = NULL;
 
-  return true;
+  return PROCESS_SUCCESSFULL;
 }
 
-/* Setup stack refactored with helper functions. */
+/* Create a minimal stack by mapping a zeroed page at the top of
+user virtual memory. */
 static bool
 setup_stack(void **esp, void *args_, char *file_name)
 {
+  /* Get the zeroed page. */
   ASSERT(file_name != NULL);
   uint8_t *kpage = palloc_get_page(PAL_USER | PAL_ZERO);
+
+  /* No such page was successfully gotten, exit setup. */
   if (!kpage)
   {
-    return false;
+    return PROCESS_FAILIURE;
   }
 
+  /* Installs page at the top of user virtual memory, cleanup and exit setup on failing install. */
   if (!install_page(((uint8_t *)PHYS_BASE) - PGSIZE, kpage, true))
   {
     palloc_free_page(kpage);
-    return false;
+    return PROCESS_FAILIURE;
   }
 
+  /* Push arguments onto the stack, clean up and exit setup if it fails to push any argument. */
   *esp = PHYS_BASE;
   char *argv[MAX_ARGS];
   int argc = 0;
-
-  /* Push arguments onto the stack. */
   if (!push_arguments(esp, (char *)args_, argv, &argc))
   {
     goto cleanup;
   }
 
-  /* Push argument addresses onto the stack. */
+  /* Push argument addresses onto the stack, clean up and exit setup if any push fails. */
   for (int i = argc; i >= 0; i--)
   {
     if (!push_to_stack(esp, &argv[i], sizeof(char *)))
@@ -719,7 +711,7 @@ setup_stack(void **esp, void *args_, char *file_name)
     }
   }
 
-  /* Push argv, argc, and fake return address. */
+  /* Push argv, argc, and fake return address, cleaning up and exiting on any failiures. */
   char **argv_ptr = *esp;
   if (!push_to_stack(esp, &argv_ptr, sizeof(char **)) ||
       !push_to_stack(esp, &argc, sizeof(int)) ||
@@ -728,12 +720,13 @@ setup_stack(void **esp, void *args_, char *file_name)
     goto cleanup;
   }
 
-  return true;
+  return PROCESS_SUCCESSFULL;
 
+/* Fails in some place, clean up memory and return false. */
 cleanup:
   palloc_free_page(kpage);
   pagedir_clear_page(thread_current()->pagedir, ((uint8_t *)PHYS_BASE) - PGSIZE);
-  return false;
+  return PROCESS_FAILIURE;
 }
 
 /* Adds a mapping from user virtual address UPAGE to kernel
